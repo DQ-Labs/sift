@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $tools = Join-Path (Get-Location).Path '.ci-tools'
 New-Item -ItemType Directory -Path $tools -Force | Out-Null
 
@@ -9,8 +10,14 @@ function Get-VerifiedDownload([string] $Uri, [string] $ChecksumUri, [string] $De
     } else { $line = $checksums }
     $expected = [regex]::Match($line, '[a-fA-F0-9]{64}').Value
     if (-not $expected) { throw "Missing published checksum for $Uri" }
-    if (-not (Test-Path -LiteralPath $Destination)) { Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Destination }
-    if ((Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash -ine $expected) { throw "Checksum mismatch: $Destination" }
+    if ((Test-Path -LiteralPath $Destination) -and (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash -ieq $expected) { return }
+    $partial = $Destination + '.partial'
+    & curl.exe --silent --show-error --fail --location --retry 3 --connect-timeout 30 --max-time 600 --output $partial $Uri
+    if ($LASTEXITCODE -ne 0) { throw "Download failed: $Uri" }
+    if ((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ine $expected) { throw "Checksum mismatch: $partial" }
+    $target = [IO.Path]::GetFullPath($Destination)
+    if (-not $target.StartsWith($tools + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Tool download target is outside the CI tools directory.' }
+    Move-Item -LiteralPath $partial -Destination $target -Force
 }
 
 $nodeVersion = '22.23.3'
@@ -26,10 +33,9 @@ $env:PATH = "$nodeDirectory;$env:PATH"
 # These binaries are used only to test CI builds, never copied into the release.
 $ffmpegArchive = Join-Path $tools 'ffmpeg-release-full.7z'
 Get-VerifiedDownload 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z' 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z.sha256' $ffmpegArchive ''
-$sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
-if (-not $sevenZip) { $sevenZip = 'C:\Program Files\7-Zip\7z.exe' }
 $ffmpegDirectory = Join-Path $tools 'ffmpeg'
-& $sevenZip x $ffmpegArchive "-o$ffmpegDirectory" -y -bd | Out-Null
+New-Item -ItemType Directory -Path $ffmpegDirectory -Force | Out-Null
+& tar.exe -xf $ffmpegArchive -C $ffmpegDirectory
 if ($LASTEXITCODE -ne 0) { throw 'Could not extract CI audio tools.' }
 $ffmpeg = Get-ChildItem -LiteralPath $ffmpegDirectory -Filter ffmpeg.exe -Recurse | Select-Object -First 1
 if (-not $ffmpeg) { throw 'CI FFmpeg executable was not found.' }
