@@ -48,18 +48,17 @@ windows_build:
     - job: source_archive
       artifacts: true
   before_script:
-    - . ./scripts/ci-windows.ps1 -NodeOnly
+    - . ./scripts/ci-windows.ps1
   script:
     - npm ci --ignore-scripts --cache .npm
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - node node_modules/electron/install.js
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    - . ./scripts/ci-windows.ps1
-    - npm test
+    - npm run test:unit
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - npm run dist:win
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    - npm run test:packaged
+    - npm run test:packaged -- --headless
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     - npm run release:checksums
     - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,10 +1,16 @@
 # Builds and releases
 
-Every branch/MR pipeline runs the Node test suite on Linux, prepares a source
-archive, then runs the suite on GitLab's hosted Windows x64 runner. Windows builds
-produce an installer and portable EXE. The packaged backend is then tested using
-the shipped executable, worker/dependencies and source rather than the checkout's
-backend. This exercises analysis, tempo/key processing, persistence and handoffs.
+Every branch/MR pipeline runs the full Node test suite on Linux, including analysis,
+tempo/key processing and handoffs, then prepares a source archive. GitLab's hosted
+Windows x64 runner runs the unit tests and produces an installer and portable EXE.
+The packaged backend is tested using the shipped executable and source: HTTP/UI
+assets, demo audio, a writable catalogue, persistence across restart and shutdown.
+
+The hosted Windows server lacks desktop multimedia DLLs needed by desktop FFmpeg
+builds. It does not run the FFmpeg integration or Electron window/portable-launch
+acceptance tests. Run the full local Windows verification below on desktop Windows;
+these checks must pass before approving a studio release. CI does not verify audio
+interface playback, ASIO, native drag-and-drop or a real DAW import.
 
 Download the `windows_build` job artifacts for an untagged test build. They expire
 after 14 days. No deployment to a studio machine happens automatically.
@@ -16,12 +22,12 @@ after 14 days. No deployment to a studio machine happens automatically.
 2. Commit, push, then tag that commit with its matching version:
 
    ```powershell
-   git tag v0.3.0-alpha.3
-   git push origin v0.3.0-alpha.3
+   git tag v0.3.0-alpha.4
+   git push origin v0.3.0-alpha.4
    ```
 
-3. The tag pipeline must pass Linux tests, Windows tests, packaging and the packaged
-   backend smoke test. Only then does it upload binaries, source, setup guide and
+3. The tag pipeline must pass Linux audio integration tests, Windows unit tests,
+   packaging and the headless packaged-backend check. Only then does it upload binaries, source, setup guide and
    SHA256SUMS.txt to GitLab's generic package registry and create the release.
 
 The publish job uses the existing CI_JOB_TOKEN. Do not add a personal access token

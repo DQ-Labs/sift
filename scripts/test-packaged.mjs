@@ -11,6 +11,12 @@ assert.equal((await readFile(executable)).toString('ascii',0,2),'MZ');
 for(const file of ['server.mjs','desktop/main.cjs','desktop/runtime.cjs','lib/analysis-worker.mjs','public/app.js','LICENSE','node_modules/essentia.js/LICENSE'])await access(path.join(root,file));
 const files=await readdir(root);
 for(const excluded of ['data','sounds','test-output','tests','.git','.env','CODE-REVIEW-REPORT.md'])assert.ok(!files.includes(excluded),`${excluded} must not ship in the application.`);
+if(process.argv.includes('--headless')){
+  const {testPackagedBackend}=await import('./test-packaged-backend.mjs');
+  await testPackagedBackend(executable,root);
+  console.log('Headless Windows package checks passed. Full FFmpeg and desktop/portable GUI acceptance tests require a desktop Windows machine: npm run test:packaged.');
+  process.exit(0);
+}
 // Run the full API/analysis/stretch/handoff workflow using the shipped Electron
 // executable as Node and the packaged source, from a separate writable directory.
 const result=spawnSync(process.execPath,['--test','tests/server.test.mjs'],{
