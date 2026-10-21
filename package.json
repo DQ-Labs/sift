@@ -1,12 +1,16 @@
 {
   "name": "sift-sample-workspace",
-  "version": "0.2.0",
+  "version": "0.3.0-alpha.1",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "desktop": "electron desktop/main.cjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "dist:win": "electron-builder --win nsis portable --x64 --publish never",
+    "pack:win": "electron-builder --win --x64 --dir --publish never",
+    "test:packaged": "node scripts/test-packaged.mjs",
+    "release:checksums": "node scripts/checksums.mjs"
   },
   "engines": {
     "node": ">=22"
@@ -15,6 +19,64 @@
     "essentia.js": "0.1.3"
   },
   "devDependencies": {
-    "electron": "44.9.2"
+    "electron": "44.9.2",
+    "electron-builder": "26.15.3"
+  },
+  "main": "desktop/main.cjs",
+  "description": "Local sample discovery and four-layer studio workbench",
+  "author": "Jacob Felton",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/JF2B/sift.git"
+  },
+  "build": {
+    "appId": "com.sift.workbench",
+    "productName": "Sift",
+    "asar": false,
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "lib/**/*",
+      "public/**/*",
+      "server.mjs",
+      "package.json",
+      "README.md",
+      "THIRD_PARTY.md",
+      "LICENSE",
+      "docs/STUDIO-SETUP.md",
+      "docs/RELEASING.md",
+      "UPSTREAM-SOURCES.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Sift-${version}-Setup-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": false
+    },
+    "portable": {
+      "artifactName": "Sift-${version}-Portable-${arch}.${ext}"
+    }
   }
 }

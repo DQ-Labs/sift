@@ -6,6 +6,10 @@
 # Installed dependencies and generated output
 node_modules/
 coverage/
+/dist/
+/.ci-tools/
+/.source-work/
+/.npm/
 *.log
 *.exe
 *.msi

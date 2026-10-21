@@ -13,9 +13,9 @@ import { encodeWav } from '../public/export-audio.js';
 
 test('local server indexes, streams and persists without exposing arbitrary files', async t => {
   const data = await mkdtemp(path.join(os.tmpdir(),'sift-test-'));
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+  const root = process.env.SIFT_TEST_ROOT||path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const port = 44317;
-  const proc = spawn(process.execPath,['server.mjs'],{cwd:root,env:{...process.env,PORT:String(port),SIFT_DATA_DIR:path.join(data,'data'),SIFT_ANALYSIS_PAUSED:'1'},stdio:['ignore','pipe','pipe'],windowsHide:true});
+  const proc = spawn(process.env.SIFT_TEST_EXECUTABLE||process.execPath,[path.join(root,'server.mjs')],{cwd:data,env:{...process.env,...(process.env.SIFT_TEST_EXECUTABLE?{ELECTRON_RUN_AS_NODE:'1'}:{}),PORT:String(port),SIFT_DATA_DIR:path.join(data,'data'),SIFT_ANALYSIS_PAUSED:'1'},stdio:['ignore','pipe','pipe','ipc'],windowsHide:true});
   t.after(()=>proc.kill());
   let startupTimer;
   try { await Promise.race([once(proc.stdout,'data'),new Promise((_,reject)=>{ startupTimer=setTimeout(()=>reject(new Error('Server startup timeout')),10000); proc.once('error',reject); proc.once('exit',code=>reject(new Error(`Server exited during startup: ${code}`))); proc.stderr.once('data',data=>reject(new Error(data.toString()))); })]); }
@@ -126,4 +126,5 @@ test('local server indexes, streams and persists without exposing arbitrary file
   await rmdir(blockedSave);
   response=await post('/api/analysis',{action:'resume'});assert.equal(response.status,200);
   status=await response.json();assert.equal(status.saveError,null);assert.equal(status.paused,false);
+  const stopped=once(proc,'exit');proc.send({type:'sift:shutdown'});assert.equal((await stopped)[0],0);
 });

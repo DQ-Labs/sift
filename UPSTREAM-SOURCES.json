@@ -1,0 +1,20 @@
+{
+  "essentia.js": {
+    "version": "0.1.3",
+    "revision": "f46c91c08bdf263d5f3d575ab8fb0f9b81695acf",
+    "source": "https://codeload.github.com/MTG/essentia.js/tar.gz/f46c91c08bdf263d5f3d575ab8fb0f9b81695acf",
+    "buildInstructions": "Dockerfile, Makefile.essentiajs and build-libs.sh in the source archive",
+    "essentiaSource": "https://github.com/MTG/essentia",
+    "note": "The published WASM reports Essentia 2.1-beta6-dev. The upstream Dockerfile clones Essentia without pinning its revision; the npm gitHead above pins the wrapper source, not the underlying C++ build."
+  },
+  "electron": {
+    "version": "44.9.2",
+    "source": "https://github.com/electron/electron/tree/v44.9.2",
+    "licenses": "Electron's LICENSE and LICENSES.chromium.html are included by electron-builder."
+  },
+  "ffmpeg": {
+    "bundled": false,
+    "source": "https://ffmpeg.org/",
+    "note": "Install a build with Rubber Band separately on the studio machine."
+  }
+}

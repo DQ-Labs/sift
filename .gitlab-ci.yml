@@ -1,0 +1,84 @@
+stages:
+  - test
+  - build
+  - release
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
+linux_tests:
+  stage: test
+  image: node:22-bookworm
+  tags: [saas-linux-small-amd64]
+  script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends ffmpeg
+    - npm ci --ignore-scripts --cache .npm
+    - npm test
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+
+source_archive:
+  stage: build
+  image: node:22-bookworm
+  tags: [saas-linux-small-amd64]
+  needs: [linux_tests]
+  script:
+    - node scripts/source-archive.mjs
+  artifacts:
+    paths:
+      - dist/*-Source.tar.gz
+      - dist/STUDIO-SETUP.md
+    expire_in: 14 days
+
+windows_build:
+  stage: build
+  tags: [saas-windows-medium-amd64]
+  timeout: 45 minutes
+  needs:
+    - job: linux_tests
+      artifacts: false
+    - job: source_archive
+      artifacts: true
+  before_script:
+    - . ./scripts/ci-windows.ps1
+  script:
+    - npm ci --ignore-scripts --cache .npm
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - node node_modules/electron/install.js
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - npm test
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - npm run dist:win
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - npm run test:packaged
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - npm run release:checksums
+    - if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  artifacts:
+    name: 'Sift-$CI_COMMIT_REF_SLUG-windows-x64'
+    paths:
+      - dist/*.exe
+      - dist/*-Source.tar.gz
+      - dist/SHA256SUMS.txt
+      - dist/STUDIO-SETUP.md
+    expire_in: 14 days
+
+publish_release:
+  stage: release
+  image: node:22-bookworm-slim
+  tags: [saas-linux-small-amd64]
+  needs:
+    - job: windows_build
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/'
+  script:
+    - node scripts/publish-release.mjs

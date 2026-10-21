@@ -108,12 +108,13 @@ const handleRequest = async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'");
     const url = new URL(req.url, `http://127.0.0.1:${port}`);
-    const desktopExecutable=path.join(here,'node_modules','electron','dist','electron.exe');
-    if(url.pathname==='/api/capabilities'&&req.method==='GET')return json(res,{handoff:1,openFolder:process.platform==='win32',desktopAvailable:process.platform==='win32'&&existsSync(desktopExecutable)});
+    const desktopExecutable=process.env.SIFT_DESKTOP_EXE||path.join(here,'node_modules','electron','dist','electron.exe');
+    if(url.pathname==='/api/capabilities'&&req.method==='GET')return json(res,{handoff:1,dataDirectory:path.resolve(dataDir),openFolder:process.platform==='win32',desktopAvailable:process.platform==='win32'&&existsSync(desktopExecutable)});
     if(url.pathname==='/api/desktop/open'&&req.method==='POST'){
       await body(req);if(process.platform!=='win32'||!existsSync(desktopExecutable))return json(res,{error:'Install the desktop runtime with npm ci first.'},400);
-      const out=openSync(path.join(here,'desktop.log'),'a'),err=openSync(path.join(here,'desktop-error.log'),'a');
-      const child=spawn(desktopExecutable,[path.join(here,'desktop','main.cjs')],{cwd:here,windowsHide:true,detached:true,stdio:['ignore',out,err]});closeSync(out);closeSync(err);child.on('error',error=>console.error('Desktop launch failed:',error.message));child.unref();return json(res,{ok:true},202);
+      const out=openSync(path.join(dataDir,'desktop.log'),'a'),err=openSync(path.join(dataDir,'desktop-error.log'),'a');
+      const desktopEnv={...process.env};delete desktopEnv.ELECTRON_RUN_AS_NODE;
+      const child=spawn(desktopExecutable,process.env.SIFT_DESKTOP_EXE?[]:[path.join(here,'desktop','main.cjs')],{cwd:process.env.SIFT_DESKTOP_EXE?dataDir:here,env:desktopEnv,windowsHide:true,detached:true,stdio:['ignore',out,err]});closeSync(out);closeSync(err);child.on('error',error=>console.error('Desktop launch failed:',error.message));child.unref();return json(res,{ok:true},202);
     }
     if(url.pathname==='/api/handoffs'&&req.method==='POST')return json(res,await handoffs.create(await body(req),db.samples),201);
     if(url.pathname==='/api/handoffs/cleanup'&&req.method==='POST'){
@@ -237,4 +238,7 @@ let servers;
 try { servers = await listenLoopback(handleRequest, port); } catch (error) { analysis.close(); throw error; }
 console.log(`Sift is running at http://127.0.0.1:${port}`);
 for (const server of servers) server.on('error', e => { console.error(e.message); process.exitCode = 1; });
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,async()=>{analysis.close();for(const server of servers)server.close();try{await persist();}finally{process.exit(0);}});
+let stopping=false;
+async function shutdown(){if(stopping)return;stopping=true;analysis.close();for(const server of servers)server.close();try{await persist();}finally{process.exit(0);}}
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,shutdown);
+if(process.send)process.on('message',message=>{if(message?.type==='sift:shutdown')void shutdown();});

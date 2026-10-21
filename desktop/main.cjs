@@ -1,34 +1,62 @@
 const { app, BrowserWindow, ipcMain, nativeImage, dialog } = require('electron');
-const { spawn } = require('node:child_process');
-const { openSync, realpathSync, lstatSync, mkdirSync } = require('node:fs');
+const { spawn, spawnSync } = require('node:child_process');
+const { openSync, closeSync, realpathSync, lstatSync, mkdirSync, existsSync, writeFileSync } = require('node:fs');
 const path = require('node:path');
+const { desktopDataPath } = require('./runtime.cjs');
 const root=path.resolve(__dirname,'..'),port=Number(process.env.PORT||4317),base=`http://127.0.0.1:${port}`;
-const data=process.env.SIFT_DATA_DIR||path.join(root,'data');
+const data=desktopDataPath({packaged:app.isPackaged,root,appData:app.getPath('appData')});
+const smokeTest=app.isPackaged&&process.argv.includes('--sift-smoke-test');
 app.setName('Sift');mkdirSync(path.join(data,'desktop-profile'),{recursive:true});app.setPath('userData',path.join(data,'desktop-profile'));
 app.commandLine.appendSwitch('force-renderer-accessibility');
-let win,store;const registered=new Map();
+let win,store,serverChild,quitting=false;const registered=new Map();
+// A portable build extracts its code to a temporary directory. Stop its own
+// backend before Electron exits so that code is not removed from under it.
+app.on('before-quit',event=>{
+  if(!app.isPackaged||!serverChild||serverChild.exitCode!==null||quitting)return;
+  event.preventDefault();quitting=true;
+  const timer=setTimeout(()=>serverChild?.kill(),5000);timer.unref();
+  serverChild.once('exit',()=>{clearTimeout(timer);serverChild=null;app.quit();});
+  if(serverChild.connected)serverChild.send({type:'sift:shutdown'},error=>{if(error)serverChild?.kill();});
+  else serverChild.kill();
+});
 if(!app.requestSingleInstanceLock())app.quit();
 else{
   app.on('second-instance',()=>{if(win){if(win.isMinimized())win.restore();win.show();win.focus();}});
   app.whenReady().then(async()=>{
     try{
+      if(app.isPackaged){
+        const winget=path.join(process.env.LOCALAPPDATA||'','Microsoft','WinGet','Links');
+        for(const [variable,name]of [['SIFT_FFMPEG','ffmpeg'],['SIFT_FFPROBE','ffprobe']]){
+          if(!process.env[variable])process.env[variable]=existsSync(path.join(winget,`${name}.exe`))?path.join(winget,`${name}.exe`):name;
+        }
+        const filter=spawnSync(process.env.SIFT_FFMPEG,['-hide_banner','-h','filter=rubberband'],{windowsHide:true,encoding:'utf8',timeout:15000});
+        const probe=spawnSync(process.env.SIFT_FFPROBE,['-version'],{windowsHide:true,encoding:'utf8',timeout:15000});
+        if(filter.status!==0||!/^Filter rubberband/m.test(filter.stdout||'')||probe.status!==0)throw new Error('Install FFmpeg with the Rubber Band filter, then reopen Sift.\n\nIn a Windows terminal run:\nwinget install --id Gyan.FFmpeg --exact\n\nYou can also set SIFT_FFMPEG and SIFT_FFPROBE to existing executables. See the Studio Setup guide included with the release.');
+      }
       const { HandoffStore }=await import('../lib/handoff.mjs');store=new HandoffStore(path.join(data,'exports'));
       let ready=false;
-      try{const response=await fetch(`${base}/api/capabilities`,{signal:AbortSignal.timeout(1500)});ready=response.ok&&(await response.json()).handoff===1;if(!ready)throw new Error('Restart the local Sift server to load handoff support.');}
+      try{const response=await fetch(`${base}/api/capabilities`,{signal:AbortSignal.timeout(1500)});const capabilities=response.ok?await response.json():{};ready=capabilities.handoff===1;if(!ready||path.resolve(capabilities.dataDirectory||'')!==data)throw new Error('Restart the local Sift server: the current instance uses a different version or catalogue.');}
       catch(error){if(error.message.startsWith('Restart'))throw error;
-        const child=spawn(process.execPath,[path.join(root,'server.mjs')],{cwd:root,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},windowsHide:true,detached:true,stdio:['ignore',openSync(path.join(root,'sift.log'),'a'),openSync(path.join(root,'sift-error.log'),'a')]});child.unref();
+        const out=openSync(path.join(data,'sift.log'),'a'),err=openSync(path.join(data,'sift-error.log'),'a');
+        const child=spawn(process.execPath,[path.join(root,'server.mjs')],{cwd:app.isPackaged?data:root,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',SIFT_DATA_DIR:data,...(app.isPackaged?{SIFT_DESKTOP_EXE:process.execPath}:{})},windowsHide:true,detached:!app.isPackaged,stdio:app.isPackaged?['ignore',out,err,'ipc']:['ignore',out,err]});closeSync(out);closeSync(err);child.on('error',error=>console.error('Sift server failed:',error.message));
+        if(app.isPackaged)serverChild=child;else child.unref();
         for(let n=0;n<80;n++){try{const r=await fetch(`${base}/api/capabilities`,{signal:AbortSignal.timeout(500)});if(r.ok&&(await r.json()).handoff===1){ready=true;break;}}catch{}await new Promise(resolve=>setTimeout(resolve,100));}
       }
       if(!ready)throw new Error('Sift could not start. Check sift-error.log.');
-      win=new BrowserWindow({title:'Sift',width:1380,height:900,minWidth:720,minHeight:600,backgroundColor:'#171919',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+      win=new BrowserWindow({show:false,title:'Sift',width:1380,height:900,minWidth:720,minHeight:600,backgroundColor:'#171919',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
       win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
       win.webContents.on('will-navigate',(event,url)=>{if(new URL(url).origin!==base)event.preventDefault();});
       win.webContents.session.setPermissionRequestHandler((contents,permission,callback)=>callback(false));
-      win.once('ready-to-show',()=>{win.show();win.focus();});
+      win.once('ready-to-show',()=>{if(!smokeTest){win.show();win.focus();}});
       win.on('closed',()=>{win=null;registered.clear();});
       await win.loadURL(base);
+      if(smokeTest){
+        const ready=await win.webContents.executeJavaScript(`new Promise(resolve=>{const started=Date.now();const check=()=>{if(document.querySelectorAll('#tracks [data-track]').length===4&&window.siftDesktop?.prepareDrag)resolve(true);else if(Date.now()-started>10000)resolve(false);else setTimeout(check,100);};check();})`);
+        if(!ready)throw new Error('Packaged desktop renderer or preload did not initialize.');
+        writeFileSync(path.join(data,'desktop-smoke.json'),JSON.stringify({rendererReady:true,dataDirectory:data}));app.quit();return;
+      }
       win.show();win.focus();
-    }catch(error){dialog.showErrorBox('Sift desktop',error.message);app.quit();}
+    }catch(error){if(smokeTest){console.error(error.message);process.exitCode=1;}else dialog.showErrorBox('Sift desktop',error.message);app.quit();}
   });
   app.on('window-all-closed',()=>app.quit());
 }

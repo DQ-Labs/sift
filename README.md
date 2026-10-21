@@ -1,6 +1,12 @@
-# Sift 0.2
+# Sift 0.3 studio preview
 
 A separate, local sample-discovery app. Built from scratch; no Upcycle binaries, code or assets are used.
+
+## Windows downloads
+
+Download the Windows x64 installer or portable EXE from [GitLab Releases](https://gitlab.com/JF2B/sift/-/releases). Node.js is bundled; FFmpeg with Rubber Band is installed separately. See [Studio Setup](docs/STUDIO-SETUP.md) for installation and audio-hardware checks. These are standalone, unsigned test builds, not VST3 plugins. Installed and portable builds store the catalogue in `%APPDATA%\Sift` and stop their own backend when closed.
+
+Branch/MR pipelines test Linux and Windows, build both EXEs, and smoke-test the packaged backend. Matching version tags publish permanent release downloads, sources and checksums. See [Releasing](docs/RELEASING.md).
 
 ## Run
 
@@ -63,6 +69,10 @@ The browser cache holds up to 12 decoded buffers / approximately 160 MiB; active
 The repository contains Sift's source, launchers, dependency lockfile and tests. It does not include sample packs, third-party installers, installed dependencies, local screenshots or your catalogue. Sift generates its original synthesized demo sounds on first launch. Add your own sample folders through the app.
 
 Keep `data/`, `sounds/`, `test-output/`, logs and credentials out of commits. The catalogue and desktop profile can contain local file paths and personal state; exported stems may contain your audio. These paths are excluded by `.gitignore`.
+
+## License
+
+Sift is licensed under AGPL-3.0-only; see [LICENSE](LICENSE). Third-party components retain their own licenses. See [THIRD_PARTY.md](THIRD_PARTY.md) and [UPSTREAM-SOURCES.json](UPSTREAM-SOURCES.json) for notices, source references and build provenance.
 
 ## Development
 
