@@ -31,7 +31,7 @@ else{
         }
         const filter=spawnSync(process.env.SIFT_FFMPEG,['-hide_banner','-h','filter=rubberband'],{windowsHide:true,encoding:'utf8',timeout:15000});
         const probe=spawnSync(process.env.SIFT_FFPROBE,['-version'],{windowsHide:true,encoding:'utf8',timeout:15000});
-        if(filter.status!==0||!/^Filter rubberband/m.test(filter.stdout||'')||probe.status!==0)throw new Error('Install FFmpeg with the Rubber Band filter, then reopen Sift.\n\nIn a Windows terminal run:\nwinget install --id Gyan.FFmpeg --exact\n\nYou can also set SIFT_FFMPEG and SIFT_FFPROBE to existing executables. See the Studio Setup guide included with the release.');
+        if(filter.status!==0||!/^Filter rubberband/m.test(filter.stdout||'')||probe.status!==0)throw new Error('Install FFmpeg with the Rubber Band filter, then reopen Sift.\n\nIn a Windows terminal run:\nwinget install --id Gyan.FFmpeg.Essentials --exact\n\nYou can also set SIFT_FFMPEG and SIFT_FFPROBE to existing executables. See the Studio Setup guide included with the release.');
       }
       const { HandoffStore }=await import('../lib/handoff.mjs');store=new HandoffStore(path.join(data,'exports'));
       let ready=false;

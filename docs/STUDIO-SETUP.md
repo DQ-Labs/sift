@@ -3,10 +3,10 @@
 These Windows x64 test builds are standalone apps. Node.js and Electron are included.
 They are not VST3 plugins and do not provide a native ASIO audio driver.
 
-1. Install a full FFmpeg build with the Rubber Band filter. In a Windows terminal:
+1. Install FFmpeg Essentials, which includes the Rubber Band filter. In a Windows terminal:
 
    ```powershell
-   winget install --id Gyan.FFmpeg --exact
+   winget install --id Gyan.FFmpeg.Essentials --exact
    ```
 
    Reopen your terminal and check `ffmpeg -hide_banner -h filter=rubberband`.
