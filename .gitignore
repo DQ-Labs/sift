@@ -1,0 +1,32 @@
+# Local catalogue, exports, desktop profile and sample packs
+/data/
+/sounds/
+/test-output/
+
+# Installed dependencies and generated output
+node_modules/
+coverage/
+*.log
+*.exe
+*.msi
+*.zip
+
+# Local review notes and screenshots may contain sample names or paths
+/CODE-REVIEW-REPORT.md
+/sift*-preview.*
+
+# Credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+.codex/
+
+# OS metadata
+.DS_Store
+Thumbs.db
