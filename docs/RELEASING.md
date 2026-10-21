@@ -16,8 +16,8 @@ after 14 days. No deployment to a studio machine happens automatically.
 2. Commit, push, then tag that commit with its matching version:
 
    ```powershell
-   git tag v0.3.0-alpha.1
-   git push origin v0.3.0-alpha.1
+   git tag v0.3.0-alpha.2
+   git push origin v0.3.0-alpha.2
    ```
 
 3. The tag pipeline must pass Linux tests, Windows tests, packaging and the packaged

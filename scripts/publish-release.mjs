@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { releaseAssetNames } from './release-files.mjs';
 
 const {version}=JSON.parse(await readFile('package.json','utf8'));
 const {CI_COMMIT_TAG:tag,CI_API_V4_URL:api,CI_PROJECT_ID:project,CI_JOB_TOKEN:token,CI_PROJECT_URL:projectUrl}=process.env;
 if(tag!==`v${version}`||!api||!project||!token)throw new Error('A matching version tag and GitLab CI job credentials are required to publish a release.');
-const directory=path.resolve('dist'),files=(await readdir(directory)).filter(name=>/\.(exe|tar\.gz|md)$/.test(name)||name==='SHA256SUMS.txt').sort();
+const directory=path.resolve('dist'),files=[...releaseAssetNames(version),'SHA256SUMS.txt'];
 const manifest=await readFile(path.join(directory,'SHA256SUMS.txt'),'utf8');
 for(const name of files.filter(name=>name!=='SHA256SUMS.txt')){
   const hash=createHash('sha256').update(await readFile(path.join(directory,name))).digest('hex');
