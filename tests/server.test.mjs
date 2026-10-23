@@ -22,6 +22,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   finally { clearTimeout(startupTimer); }
   const base=`http://127.0.0.1:${port}`,get=route=>fetch(base+route),post=(route,value)=>fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
   let response=await get('/api/library');assert.equal(response.status,200);let library=await response.json();assert.equal(library.samples.length,12);
+  response=await get('/api/library/status');assert.equal(response.status,200);const libraryStatus=await response.json();assert.equal(libraryStatus.scan.running,false);assert.equal(libraryStatus.analysis.total,12);assert.equal(libraryStatus.analysis.remaining,12);assert.equal(libraryStatus.samples,undefined);
   const id=library.samples[0].id;
   response=await fetch(`http://localhost:${port}/api/library`);assert.equal(response.status,200);
   response=await fetch(`http://[::1]:${port}/api/library`,{headers:{Origin:`http://[::1]:${port}`}});assert.equal(response.status,200);
@@ -47,7 +48,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   const saved=JSON.parse(await readFile(path.join(data,'data','library.json'),'utf8'));assert.deepEqual(saved.favorites,[imported.id]);assert.equal(saved.sets[0].name,'First find');assert.equal(saved.workspace.tempo,110);
   assert.equal(saved.sets[0].key,'A# min');assert.equal(saved.workspace.key,'C maj');
   assert.deepEqual(saved.workspace.tracks[0].timing,{offset:.125,repeat:'bar'});assert.deepEqual(saved.sets[0].tracks[0].timing,{offset:null,repeat:'auto'});
-  response=await get('/');assert.equal(response.status,200);assert.match(await response.text(),/Find what you forgot/);
+  response=await get('/');assert.equal(response.status,200);assert.match(await response.text(),/id="workspace"/);
   response=await get('/app.js');assert.equal(response.status,200);assert.ok((await response.text()).length>10000);
   response=await post('/api/metadata',{id:imported.id,bpm:55,key:null});assert.equal(response.status,200);let updated=await response.json();assert.equal(updated.bpmSource,'manual');assert.equal(updated.bpm,55);
   response=await post('/api/metadata',{id:imported.id,bpm:999,key:null});assert.equal(response.status,400);
@@ -74,6 +75,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   for(const settings of [{key:'invalid'},{key:{}},{sync:'false'}]){response=await post('/api/stretch',{id:tonal.id,tempo:120,...settings});assert.equal(response.status,400);}
   response=await get('/harmony.js');assert.equal(response.status,200);
   response=await get('/timing.js');assert.equal(response.status,200);
+  response=await get('/library-activity.js');assert.equal(response.status,200);
   response=await get('/export-audio.js');assert.equal(response.status,200);
   response=await get('/api/capabilities');assert.equal((await response.json()).handoff,1);
   response=await post('/api/handoffs',{workspace:{tracks:[{id:tonal.id,type:'Melodic'}],tempo:120,key:'B min',sync:true}});assert.equal(response.status,201);

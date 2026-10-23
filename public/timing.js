@@ -81,3 +81,27 @@ export function makeCycle(context, buffer, sample, track, settings) {
   for (let channel=0;channel<buffer.numberOfChannels;channel++) fillCycle(buffer.getChannelData(channel), cycle.getChannelData(channel), plan);
   return { buffer:cycle, plan };
 }
+
+const loopBuffers = new WeakMap();
+export function createCycleSource(context, buffer) {
+  // Chromium can stop wrapping when duration * sampleRate rounds just past
+  // the last frame. Keep the loop boundary inside the physical buffer with
+  // one guard frame, without changing the musical cycle or its frame count.
+  let guarded = loopBuffers.get(buffer);
+  if (!guarded) {
+    guarded = context.createBuffer(buffer.numberOfChannels, buffer.length + 1, buffer.sampleRate);
+    for (let channel=0;channel<buffer.numberOfChannels;channel++) {
+      const data = buffer.getChannelData(channel);
+      guarded.copyToChannel(data, channel);
+      guarded.getChannelData(channel)[buffer.length] = data[0];
+    }
+    loopBuffers.set(buffer, guarded);
+  }
+  const source = context.createBufferSource();
+  source.buffer = guarded;
+  source.loop = true;
+  source.loopStart = 0;
+  source.loopEnd = buffer.duration;
+  source.playbackRate.value = 1;
+  return source;
+}

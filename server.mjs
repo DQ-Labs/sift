@@ -37,7 +37,7 @@ for (const [type, names] of Object.entries(demoNames)) {
 }
 for(const sample of db.samples) refreshSampleMetadata(sample);
 await persist();
-let scan = { running: false, count: 0, skipped: 0, error: null, cancelled: false };
+let scan = { running: false, count: 0, skipped: 0, error: null, cancelled: false, phase: null, current: null };
 let cleaning = false;
 for(const sample of db.samples) Object.assign(sample,effectiveMetadata(sample));
 const analysis = new AnalysisQueue({samples:()=>db.samples,persist,paused:db.analysisPaused || process.env.SIFT_ANALYSIS_PAUSED==='1'});
@@ -46,11 +46,11 @@ const handoffs = new HandoffStore(path.join(dataDir,'exports'));
 analysis.enqueue(db.samples);
 
 async function scanFolder(root) {
-  scan = { running: true, count: 0, skipped: 0, error: null, cancelled: false };
+  scan = { running: true, count: 0, skipped: 0, error: null, cancelled: false, phase: 'indexing', current: path.basename(root) || root };
   try {
     const stack = [root], index = new SampleIndex(db.samples);
     while (stack.length && !scan.cancelled) {
-      const dir = stack.pop(); let entries;
+      const dir = stack.pop(); let entries; scan.current = path.relative(root, dir) || path.basename(root) || root;
       try { entries = await readdir(dir, { withFileTypes: true }); } catch { scan.skipped++; continue; }
       for (const entry of entries) {
         if (scan.cancelled) break;
@@ -72,10 +72,11 @@ async function scanFolder(root) {
       }
     }
     if (!db.folders.some(f => f.path === root)) db.folders.push({ path: root, name: path.basename(root) || root });
+    scan.phase = 'saving';
     if (!scan.cancelled) await checkMissingSamples(db.samples.filter(s => s.root === root));
     await persist();
   } catch (e) { scan.error = e.message; }
-  finally { scan.running = false; analysis.enqueue(db.samples); }
+  finally { scan.running = false; scan.current = null; analysis.enqueue(db.samples); }
 }
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff' };
 function json(res, value, status = 200) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); }
@@ -142,6 +143,7 @@ const handleRequest = async (req, res) => {
       }
     }
     if (url.pathname === '/api/library' && req.method === 'GET') return json(res, { ...db, recovery, scan, analysis:analysis.status() });
+    if (url.pathname === '/api/library/status' && req.method === 'GET') return json(res, { scan, analysis:analysis.status() });
     if (url.pathname === '/api/library/cleanup' && req.method === 'POST') {
       await body(req);
       if (scan.running || cleaning) return json(res, { error: 'Wait for the current library scan or cleanup to finish.' }, 409);
@@ -228,7 +230,7 @@ const handleRequest = async (req, res) => {
       try { return await streamFile(req, res, sample.path); } catch (error) { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return json(res, { error: 'This sample is missing. Reconnect its drive or rescan its folder.' }, 404); throw error; }
     }
     if (['GET', 'HEAD'].includes(req.method)) {
-      const files = { '/': 'index.html', '/app.js': 'app.js', '/workspace.js': 'workspace.js', '/harmony.js': 'harmony.js', '/timing.js': 'timing.js', '/export-audio.js':'export-audio.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg' };
+      const files = { '/': 'index.html', '/app.js': 'app.js', '/workspace.js': 'workspace.js', '/harmony.js': 'harmony.js', '/timing.js': 'timing.js', '/library-activity.js':'library-activity.js', '/export-audio.js':'export-audio.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg' };
       if (files[url.pathname]) return await streamFile(req, res, path.join(here, 'public', files[url.pathname]));
     }
     json(res, { error: 'Not found' }, 404);

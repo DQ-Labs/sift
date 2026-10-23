@@ -45,6 +45,7 @@ With Node.js 22+ and FFmpeg/Rubber Band installed:
 ```powershell
 npm ci
 npm test
+npm run test:playback
 npm run dist:win
 npm run test:packaged
 node scripts/source-archive.mjs

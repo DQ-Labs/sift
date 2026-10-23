@@ -76,9 +76,11 @@ test('analysis queue persists results, continues past corrupt files, and retains
   const directory=await mkdtemp(path.join(os.tmpdir(),'sift-analysis-'));const valid=path.join(directory,'untagged.wav'),broken=path.join(directory,'broken.wav');
   await writeFile(valid,wavFromChannels([clickFixture(120)]));await writeFile(broken,'not audio');
   const samples=[{id:'bad',name:'bad',filename:'broken.wav',path:broken,type:'Other'},{id:'good',name:'good',filename:'untagged.wav',path:valid,type:'Drums',overrides:{bpm:60,key:null}}];let saved=0;
-  const queue=new AnalysisQueue({samples:()=>samples,persist:async()=>{saved++;},paused:true});queue.enqueue(samples);assert.equal(queue.status().pending,2);assert.equal(queue.status().running,false);queue.resume();
+  const progress=[];
+  const queue=new AnalysisQueue({samples:()=>samples,persist:async()=>{saved++;progress.push(queue.status());},paused:true});queue.enqueue(samples);assert.equal(queue.status().pending,2);assert.equal(queue.status().running,false);queue.resume();
   const deadline=Date.now()+20000;while(queue.status().running||queue.status().pending){assert.ok(Date.now()<deadline,'analysis timeout');await new Promise(r=>setTimeout(r,30));}
   assert.equal(samples[0].analysis.status,'error');assert.equal(samples[1].analysis.status,'done');assert.ok(Math.abs(samples[1].analysis.bpm-120)<2);assert.equal(samples[1].bpm,60);assert.equal(samples[1].bpmSource,'manual');assert.equal(saved,2);
+  assert.deepEqual(progress.map(s=>[s.processed,s.total,s.remaining]),[[1,2,1],[2,2,0]],'Saving an active result must not count that sample twice');
   queue.enqueue(samples);assert.equal(queue.status().pending,0);queue.close();
 });
 

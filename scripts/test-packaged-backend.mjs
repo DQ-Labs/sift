@@ -36,7 +36,7 @@ export async function testPackagedBackend(executable,root){
   try{
     const response=await fetch(`${base}/api/library`);assert.equal(response.status,200);
     const library=await response.json();assert.equal(library.samples.length,12);const id=library.samples[0].id;
-    const page=await fetch(base);assert.equal(page.status,200);assert.match(await page.text(),/Find what you forgot/);
+    const page=await fetch(base);assert.equal(page.status,200);assert.match(await page.text(),/id="workspace"/);
     const audio=await fetch(`${base}/audio/${id}`,{headers:{Range:'bytes=0-43'}});assert.equal(audio.status,206);assert.equal(Buffer.from(await audio.arrayBuffer()).toString('ascii',0,4),'RIFF');
     const saved=await fetch(`${base}/api/favorites`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});assert.equal(saved.status,200);
     await stop(child);child=null;

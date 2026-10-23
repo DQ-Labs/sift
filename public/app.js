@@ -1,7 +1,8 @@
 import { normalizeWorkspace } from './workspace.js';
 import { chooseCombination, noteNames, pitchPlan, renderPlan } from './harmony.js';
-import { defaultTiming, makeCycle, sessionFrames, cyclePosition, audibleStart } from './timing.js';
+import { defaultTiming, makeCycle, createCycleSource, sessionFrames, cyclePosition, audibleStart } from './timing.js';
 import { audibleTracks, mixScale, encodeWav } from './export-audio.js';
+import { libraryActivity } from './library-activity.js';
 const $ = selector => document.querySelector(selector);
 const icons = {
   down:'<path d="m5 9 7 7 7-7"/>', settings:'<path d="M4 7h16M4 17h16M8 4v6M16 14v6"/>',
@@ -21,7 +22,7 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&
 const metadataSource = source => source === 'filename-hint' ? 'unverified filename number' : source || 'unknown';
 const colors = { Drums:'#c8ad85', Bass:'#a1b39a', Melodic:'#a1b7c0', Texture:'#b1a1bc', Vocal:'#c4a3a0', Other:'#a1aaa0' };
 document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon));
-const state = { samples:[], favorites:[], folders:[], sets:[], source:null, view:'discover', collectionOpen:false, query:'', type:'', bpm:'', sort:'name', page:0, conflictsOnly:false, selected:null, tracks:[], tempo:92, sync:true, key:'A min', setName:'Untitled set',analysis:null };
+const state = { samples:[], favorites:[], folders:[], sets:[], source:null, view:'discover', collectionOpen:false, query:'', type:'', bpm:'', sort:'name', page:0, conflictsOnly:false, selected:null, tracks:[], tempo:92, sync:true, key:'A min', setName:'Untitled set',analysis:null,scan:null };
 const sampleById = id => state.samples.find(s => s.id === id);
 let context, mixNodes = [], mixPlaying = false, mixStarting = false, mixToken = 0, mixStart = 0, mixCycleDuration = 0, saveTimer, toastTimer, previewToken = 0;
 const buffers = new Map(), loading = new Map();
@@ -93,7 +94,6 @@ function renderSources() {
   const real = state.samples.filter(s => !s.demo).length;
   $('#sources').innerHTML = `${real ? `<button class="source-item ${!state.source?'active':''}" data-source="">${icon('library')}<span class="source-name">All folders</span><small>${real.toLocaleString()}</small></button>` : ''}${state.folders.map(folder => `<button class="source-item ${state.source === folder.path?'active':''}" data-source="${escape(folder.path)}" title="${escape(folder.path)}">${icon('folder')}<span class="source-name">${escape(folder.name)}</span><small>${state.samples.filter(s => s.root === folder.path).length}</small></button>`).join('')}<button class="source-item ${state.source==='demo'||!real?'active':''}" data-source="demo">${icon('folder')}<span class="source-name">Sift demo collection</span><small>12</small></button>`;
   $('#sampleCount').textContent = (real || state.samples.length).toLocaleString(); $('#gemCount').textContent = state.favorites.length.toLocaleString(); $('#setCount').textContent = state.sets.length;
-  $('#collectionBadge').innerHTML = `<span class="tiny-square"></span>${sourceSamples().every(s => s.demo)?'DEMO COLLECTION':'YOUR SAMPLE LIBRARY'}<button id="demoInfo" title="About this collection" aria-label="About this collection">${icon('info')}</button>`;
 }
 function renderRows() {
   const conflicts=sourceSamples().filter(hasConflict).length;$('#reviewConflicts').textContent=`Metadata conflicts (${conflicts})`;$('#reviewConflicts').setAttribute('aria-pressed',String(state.conflictsOnly));
@@ -153,8 +153,8 @@ function renderSets() {
 function setView(view) {
   state.view = view; state.page = 0;
   document.querySelector('.app').dataset.view=view;
-  const titles = {discover:['Discover','Find what you forgot.','Old samples. Unexpected combinations. Your next idea is in here.'],library:['All samples','A deeper dig.','Search your folders, audition a sound, and follow your ears.'],gems:['Saved gems','The ones worth keeping.','A personal shortlist of sounds with something to say.'],sets:['Saved sets','Pick up the thread.','Come back to a combination that caught your attention.']};
-  const [label,title,description] = titles[view]; $('#breadcrumbView').textContent = label; $('#pageTitle').textContent = title; $('#pageDescription').textContent = description;
+  const labels = {discover:'Discover',library:'All samples',gems:'Saved gems',sets:'Saved sets'};
+  $('#breadcrumbView').textContent = labels[view];
   $('#workspace').hidden = view !== 'discover'; $('#librarySection').hidden = view === 'sets'; $('#setsSection').hidden = view !== 'sets';
   $('#libraryTitle').textContent = view === 'gems' ? 'Your shortlist' : 'The collection';
   document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('active',button.dataset.view === view)); renderRows(); renderSets();
@@ -232,7 +232,7 @@ async function playMix() {
     mixStart = ctx.currentTime + .06;
     mixCycleDuration=ready.find(Boolean).buffer.duration;
     mixNodes = ready.filter(Boolean).map(({buffer,sample,index}) => {
-      const source = ctx.createBufferSource(), gain = ctx.createGain(); source.buffer=buffer; source.loop=true; source.playbackRate.value=1; gain.gain.value=effectiveVolume(state.tracks[index])*.6; source.connect(gain).connect(ctx.destination); source.start(mixStart); return {source,gain,index,duration:buffer.duration,rate:1};
+      const source = createCycleSource(ctx,buffer), gain = ctx.createGain(); gain.gain.value=effectiveVolume(state.tracks[index])*.6; source.connect(gain).connect(ctx.destination); source.start(mixStart); return {source,gain,index,duration:buffer.duration,rate:1};
     });
     mixStarting=false; mixPlaying=true; $('#workspace').classList.add('playing'); $('#transportStatus').textContent=key?`${sync?'TEMPO + KEY':'KEY SYNC'} · ${key.toUpperCase()}`:sync?'TEMPO SYNC · PITCH PRESERVED':'ORIGINAL SPEED · LOOPING';
     const notices=[];
@@ -287,8 +287,8 @@ async function renderExportLayers(workspace,includeAll=false,onProgress=()=>{}){
   for(const {track,index} of selected){
     onProgress(`Rendering layer ${index+1}…`);
     const prepared=await cycleForTrack(track,settings);if(!prepared)throw new Error(`Layer ${index+1} is unavailable.`);
-    const offline=new OfflineAudioContext(2,sessionFrames(workspace.tempo,44100),44100),source=offline.createBufferSource();
-    source.buffer=prepared.buffer;source.loop=true;source.connect(offline.destination);source.start(0);
+    const offline=new OfflineAudioContext(2,sessionFrames(workspace.tempo,44100),44100),source=createCycleSource(offline,prepared.buffer);
+    source.connect(offline.destination);source.start(0);
     const rendered=await offline.startRendering();layers.push({index,gain:track.volume*.6,channels:[rendered.getChannelData(0),rendered.getChannelData(1)]});
   }
   return layers;
@@ -355,7 +355,7 @@ $('#dragAllStems').onclick=()=>toast('Click and hold, then drag the stems into F
 $('#openHandoffFolder').onclick=async()=>{try{await api(`handoffs/${handoffBatch.id}/open`,{});}catch(error){$('#handoffError').textContent=error.message;}};
 $('#openDesktop').onclick=async()=>{try{await api('desktop/open',{});toast('Opening desktop Sift. Prepare stems there for direct dragging.');}catch(error){$('#handoffError').textContent=error.message;}};
 function refreshPreviewMetadata(){const s=sampleById(state.selected);if(s)$('#previewDetail').textContent=`${s.folder} · ${s.bpm?`${s.bpm} BPM (${metadataSource(s.bpmSource)})`:'Tempo unknown'} · ${s.key || 'Key unknown'}`;}
-async function refreshLibrary() { const data=await api('library');state.samples=data.samples;state.favorites=data.favorites;state.folders=data.folders;state.sets=data.sets;state.analysis=data.analysis;$('#recoveryNotice').hidden=!data.recovery;$('#recoveryNotice').textContent=data.recovery?`${data.recovery.message} Preserved files: ${data.recovery.preserved.join(', ')||'none'}`:'';renderSources();renderRows();renderSets();renderAnalysis();refreshPreviewMetadata();return data; }
+async function refreshLibrary() { const data=await api('library');state.samples=data.samples;state.favorites=data.favorites;state.folders=data.folders;state.sets=data.sets;state.analysis=data.analysis;state.scan=data.scan;libraryStatusUnavailable=false;$('#recoveryNotice').hidden=!data.recovery;$('#recoveryNotice').textContent=data.recovery?`${data.recovery.message} Preserved files: ${data.recovery.preserved.join(', ')||'none'}`:'';renderSources();renderRows();renderSets();renderAnalysis();refreshPreviewMetadata();return data; }
 
 $('#cleanupExports').onclick=async()=>{
   const button=$('#cleanupExports');button.disabled=true;
@@ -374,20 +374,31 @@ $('#cleanupLibrary').onclick=async()=>{
     toast(`${result.removed} missing entries removed.${result.missing?` ${result.missing} kept for gems, sets or the workbench.`:''}${result.unavailableRoots?` ${result.unavailableRoots} unavailable source folders skipped; reconnect their drives.`:''}`);
   }catch(e){toast(e.message);}finally{button.disabled=false;}
 };
-let scanPoll;
-function watchScan() {
-  clearInterval(scanPoll);
-  const poll=async()=>{try{const scan=await api('scan');if(scan.running){$('#scanState').innerHTML=`<i></i> Indexing ${scan.count.toLocaleString()} <button id="cancelScan" class="subtle-button">Cancel</button>`;}else{clearInterval(scanPoll);$('#scanState').innerHTML='<i></i> Library ready';await refreshLibrary();toast(scan.error?`Scan failed: ${scan.error}`:`${scan.cancelled?'Stopped. ':''}${scan.count.toLocaleString()} samples indexed${scan.skipped?` · ${scan.skipped} unreadable items skipped`:''}.`);}}catch(e){clearInterval(scanPoll);toast(e.message);}};
-  scanPoll=setInterval(poll,800);poll();
+let libraryStatusUnavailable=false;
+function renderLibraryActivity() {
+  const activity=libraryActivity(state.scan,state.analysis,libraryStatusUnavailable),panel=$('#libraryActivity'),progress=$('#libraryActivityProgress'),button=$('#libraryActivityAction');
+  panel.hidden=!activity.visible;panel.classList.toggle('busy',activity.busy);
+  $('#scanState').classList.toggle('processing',activity.busy);$('#scanState').innerHTML=`<i></i> ${escape(activity.label)}`;
+  if(!activity.visible)return;
+  if($('#libraryActivityTitle').textContent!==activity.title)$('#libraryActivityTitle').textContent=activity.title;
+  $('#libraryActivityDetail').textContent=activity.detail;
+  $('#libraryActivityCurrent').textContent=activity.current||'';$('#libraryActivityCurrent').title=activity.current||'';
+  progress.hidden=!activity.busy&&!activity.progress;
+  if(activity.progress){progress.max=Math.max(1,activity.progress.max);progress.value=activity.progress.value;progress.setAttribute('aria-valuetext',`${activity.progress.value} of ${activity.progress.max} samples processed`);}else{progress.removeAttribute('value');progress.removeAttribute('aria-valuetext');}
+  button.hidden=!activity.action;button.dataset.action=activity.action||'';button.textContent=activity.actionLabel||'';
 }
+$('#libraryActivityAction').onclick=async()=>{
+  const button=$('#libraryActivityAction'),action=button.dataset.action;button.disabled=true;
+  try{if(action==='cancel')state.scan=await api('cancel-scan',{});else state.analysis=await api('analysis',{action});renderAnalysis();}
+  catch(error){toast(error.message);}finally{button.disabled=false;}
+};
 $('#navigation').addEventListener('click',e=>{const button=e.target.closest('[data-view]');if(button)setView(button.dataset.view);});
 $('#sources').addEventListener('click',e=>{const button=e.target.closest('[data-source]');if(button){state.source=button.dataset.source||null;state.page=0;renderSources();renderRows();}});
 for(const id of ['addFolder','sidebarAdd'])$('#'+id).onclick=()=>{$('#folderError').textContent='';$('#folderDialog').showModal();};
-$('#aboutButton').onclick=()=>$('#aboutDialog').showModal();$('#collectionBadge').onclick=()=>$('#aboutDialog').showModal();
+$('#aboutButton').onclick=()=>$('#aboutDialog').showModal();
 document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$('#'+button.dataset.close).close());
-$('#folderForm').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#folderError').textContent='';try{await api('scan',{path:$('#folderPath').value.trim()});state.source=null;$('#folderDialog').close();watchScan();}catch(error){$('#folderError').textContent=error.message;}finally{button.disabled=false;}};
+$('#folderForm').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;$('#folderError').textContent='';try{await api('scan',{path:$('#folderPath').value.trim()});state.scan={running:true,count:0};libraryStatusUnavailable=false;state.source=null;$('#folderDialog').close();renderLibraryActivity();void pollAnalysis();}catch(error){$('#folderError').textContent=error.message;}finally{button.disabled=false;}};
 $('#browseFolder').onclick=async()=>{const button=$('#browseFolder');button.disabled=true;button.textContent='Choose folder…';try{const result=await api('pick-folder',{});if(result.path)$('#folderPath').value=result.path;}catch(e){$('#folderError').textContent=e.message;}finally{button.disabled=false;button.textContent='Browse…';}};
-$('#scanState').onclick=e=>{if(e.target.closest('#cancelScan'))api('cancel-scan',{}).catch(e=>toast(e.message));};
 $('#search').oninput=e=>{state.query=e.target.value;state.page=0;renderRows();};
 for(const [id,prop]of [['typeFilter','type'],['bpmFilter','bpm'],['sort','sort']])$('#'+id).onchange=e=>{state[prop]=e.target.value;state.page=0;renderRows();};
 $('#previousPage').onclick=()=>{state.page--;renderRows();};$('#nextPage').onclick=()=>{state.page++;renderRows();};
@@ -450,6 +461,7 @@ $('#saveSet').onclick=()=>{if(!state.tracks.some(t=>t.id)){toast('Add a sample f
 $('#saveForm').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const name=$('#setName').value.trim();if(!name)return;const set=await api('sets',{...snapshot(),name});state.sets.unshift(set);state.setName=name;renderTracks();renderSources();renderSets();saveWorkspace();$('#saveDialog').close();toast('Set saved on this machine.');}catch(error){toast(error.message);}finally{button.disabled=false;}};
 $('#savedSets').onclick=e=>{const button=e.target.closest('[data-load-set]');if(!button)return;const set=state.sets.find(s=>s.id===button.dataset.loadSet);if(!set)return;stopMix();const workspace=normalizeWorkspace(set);state.tracks=workspace.tracks;state.tempo=workspace.tempo;state.sync=workspace.sync;state.key=workspace.key;state.setName=set.name;renderTracks();setView('discover');saveWorkspace();warmTracks();};
 function renderAnalysis(){
+  renderLibraryActivity();
   const status=state.analysis;if(!status)return;
   $('#analysisSaveNotice').hidden=!status.saveError;
   // Avoid repeatedly announcing the same alert on every status poll.
@@ -464,9 +476,10 @@ function renderAnalysis(){
 let analysisPolling=false;
 async function pollAnalysis(){
   if(analysisPolling)return;analysisPolling=true;
-  try{const latest=await api('analysis'),previous=state.analysis?.revision;state.analysis=latest;
-    if(latest.revision!==previous){await refreshLibrary();if(!mixPlaying&&!mixStarting&&!document.activeElement?.matches('.level,#tempo'))renderTracks();}else renderAnalysis();
-  }catch{ $('#analysisSummary').textContent='Analysis service unavailable — check that Sift is running.'; }
+  try{const latest=await api('library/status'),previous=state.analysis?.revision,scanFinished=state.scan?.running&&!latest.scan.running;state.analysis=latest.analysis;state.scan=latest.scan;libraryStatusUnavailable=false;
+    if(latest.analysis.revision!==previous||scanFinished){await refreshLibrary();if(!mixPlaying&&!mixStarting&&!document.activeElement?.matches('.level,#tempo'))renderTracks();}else renderAnalysis();
+    if(scanFinished)toast(latest.scan.error?`Scan failed: ${latest.scan.error}`:`${latest.scan.cancelled?'Stopped. ':''}${latest.scan.count.toLocaleString()} samples indexed${latest.scan.skipped?` · ${latest.scan.skipped} unreadable items skipped`:''}.${latest.analysis.remaining?' Audio analysis continues in the background.':''}`);
+  }catch{ libraryStatusUnavailable=true;renderLibraryActivity();$('#analysisSummary').textContent='Analysis service unavailable — check that Sift is running.'; }
   finally{analysisPolling=false;}
 }
 $('#analysisPause').onclick=async()=>{try{state.analysis=await api('analysis',{action:state.analysis?.paused?'resume':'pause'});renderAnalysis();}catch(e){toast(e.message);}};
@@ -513,5 +526,5 @@ $('#reanalyzeSample').onclick=async()=>{try{state.analysis=await api('analysis',
 setInterval(pollAnalysis,2000);
 document.addEventListener('keydown',e=>{if(e.target.closest('input,select,textarea')||document.querySelector('dialog[open]'))return;if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();focusCollectionSearch();return;}if(e.target.closest('button'))return;if(e.key===' '){e.preventDefault();playMix();}else if(e.key.toLowerCase()==='r'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();reroll();}else if(['ArrowDown','ArrowUp'].includes(e.key)){const list=filteredSamples();const i=list.findIndex(s=>s.id===state.selected),next=list[Math.max(0,Math.min(list.length-1,i+(e.key==='ArrowDown'?1:-1)))];if(next){e.preventDefault();state.page=Math.floor(list.indexOf(next)/50);audition(next.id);}}});
 window.addEventListener('resize',drawAll);
-async function init(){try{const data=await refreshLibrary(),workspace=normalizeWorkspace(data.workspace);state.tracks=workspace.tracks;state.tempo=workspace.tempo;state.sync=workspace.sync;state.key=workspace.key;state.setName=workspace.name;renderTracks();renderRows();if(data.scan.running)watchScan();warmTracks();requestAnimationFrame(animation);}catch(e){toast(`Could not connect to Sift: ${e.message}`);$('#scanState').textContent='Connection unavailable';}}
+async function init(){try{const data=await refreshLibrary(),workspace=normalizeWorkspace(data.workspace);state.tracks=workspace.tracks;state.tempo=workspace.tempo;state.sync=workspace.sync;state.key=workspace.key;state.setName=workspace.name;renderTracks();renderRows();warmTracks();requestAnimationFrame(animation);}catch(e){toast(`Could not connect to Sift: ${e.message}`);libraryStatusUnavailable=true;renderLibraryActivity();}}
 init();
