@@ -148,6 +148,15 @@ test('local server indexes, streams and persists without exposing arbitrary file
   assert.equal(saved.workspace.tempo, 110);
   assert.equal(saved.sets[0].key, 'A# min');
   assert.equal(saved.workspace.key, 'C maj');
+
+  // Overwriting a set by name replaces it rather than keeping both.
+  const firstSetId = saved.sets[0].id;
+  const overwrite = await post('/api/sets', { name: 'First find', tempo: 100, replaces: firstSetId, tracks: [{ id: imported.id }] });
+  assert.equal(overwrite.status, 200);
+  assert.equal((await overwrite.json()).replaced, firstSetId);
+  assert.equal((await post('/api/sets', { name: 'Bad', replaces: 7, tracks: [] })).status, 400);
+  saved = await getJson('/api/library?lite=1');
+  assert.deepEqual(saved.sets.filter(set => set.name === 'First find').map(set => set.tempo), [100]);
   assert.deepEqual(saved.workspace.tracks[0].timing, { offset: 0.125, repeat: 'bar' });
   assert.deepEqual(saved.sets[0].tracks[0].timing, { offset: null, repeat: 'auto' });
 
@@ -158,8 +167,8 @@ test('local server indexes, streams and persists without exposing arbitrary file
   response = await get('/app.js');
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'text/javascript');
-  assert.ok((await response.text()).length > 10000);
-  for (const file of ['/harmony.js', '/timing.js', '/library-activity.js', '/export-audio.js', '/styles.css', '/favicon.svg', '/index.html']) {
+  assert.match(await response.text(), /from '\.\/workbench\.js'/);
+  for (const file of ['/harmony.js', '/timing.js', '/library-activity.js', '/export-audio.js', '/workbench.js', '/catalog-client.js', '/styles.css', '/favicon.svg', '/index.html']) {
     assert.equal((await get(file)).status, 200, file);
   }
   response = await get('/workspace.js');

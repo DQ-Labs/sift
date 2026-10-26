@@ -1,4 +1,4 @@
-import { parseKey } from './harmony.js';
+import { parseKey, clampVariety } from './harmony.js';
 import { defaultTiming, repeatModes } from './timing.js';
 export const trackTypes = ['Drums', 'Bass', 'Melodic', 'Texture', 'Vocal', 'Other'];
 const defaults = trackTypes.slice(0, 4);
@@ -35,5 +35,13 @@ export function normalizeWorkspace(input, { strict = false } = {}) {
   if (input.sync !== undefined && typeof input.sync !== 'boolean') fail('Tempo sync must be true or false.');
   if (input.key !== undefined && input.key !== null && !parseKey(input.key)) fail('Choose a valid session key, or original keys.');
   if (input.name !== undefined && (typeof input.name !== 'string' || input.name.length > 100)) fail('Workspace name must be text up to 100 characters.');
-  return { tracks, tempo: Number.isFinite(input.tempo) ? Math.max(40, Math.min(240, input.tempo)) : 92, sync: fresh || input.sync === true, key: fresh ? 'A min' : parseKey(input.key)?.name || null, name: typeof input.name === 'string' ? input.name.slice(0, 100) : 'Untitled set' };
+  if (input.variety !== undefined && (!Number.isFinite(input.variety) || input.variety < 0 || input.variety > 1)) fail('Variety must be between 0 (safe) and 1 (wild).');
+  return {
+    tracks,
+    tempo: Number.isFinite(input.tempo) ? Math.max(40, Math.min(240, input.tempo)) : 92,
+    sync: fresh || input.sync === true,
+    key: fresh ? 'A min' : parseKey(input.key)?.name || null,
+    variety: clampVariety(input.variety),
+    name: typeof input.name === 'string' ? input.name.slice(0, 100) : 'Untitled set'
+  };
 }
