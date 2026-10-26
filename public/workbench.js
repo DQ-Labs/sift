@@ -209,8 +209,9 @@ async function prefetchCandidates() {
     const pick = chosen[index];
     if (!pick?.id || pick.id === track.id) continue;
     candidates.set(index, { context, pick });
-    // One render at a time, so the prefetch never crowds out audible layers.
-    const entry = prepareCycle(candidateTrack(index, pick));
+    // One render at a time at background priority: the server starts any
+    // audible layer's render ahead of it and keeps a worker free for one.
+    const entry = prepareCycle(candidateTrack(index, pick), currentSettings(), { priority: 'prefetch' });
     if (entry) await entry.promise.catch(() => {});
   }
 }
