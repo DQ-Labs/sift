@@ -12,9 +12,35 @@
     "source": "https://github.com/electron/electron/tree/v44.9.2",
     "licenses": "Electron's LICENSE and LICENSES.chromium.html are included by electron-builder."
   },
+  "electron-updater": {
+    "version": "6.8.11",
+    "source": "https://github.com/electron-userland/electron-builder/tree/master/packages/electron-updater",
+    "license": "MIT",
+    "note": "Installed from npm, pinned by package-lock.json; its dependencies' licence files ship in resources/app/node_modules."
+  },
   "ffmpeg": {
-    "bundled": false,
-    "source": "https://ffmpeg.org/",
-    "note": "Install a build with Rubber Band separately on the studio machine."
+    "bundled": true,
+    "version": "8.1.2",
+    "build": "8.1.2-essentials_build-www.gyan.dev",
+    "builder": "Gyan Doshi, https://www.gyan.dev/ffmpeg/builds/",
+    "license": "GPLv3 (the build README states \"License: GPL v3\"; it enables GPL and version-3 components, including librubberband and libx264)",
+    "windows": {
+      "url": "https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip",
+      "sha256": "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec",
+      "archiveRoot": "ffmpeg-8.1.2-essentials_build",
+      "files": {
+        "bin/ffmpeg.exe": "ffmpeg.exe",
+        "bin/ffprobe.exe": "ffprobe.exe",
+        "LICENSE": "LICENSE.txt",
+        "README.txt": "README.txt"
+      }
+    },
+    "source": {
+      "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
+      "sha256": "",
+      "revision": "https://github.com/FFmpeg/FFmpeg/commit/38b88335f9"
+    },
+    "externalLibraries": "README.txt in the bundle lists every enabled external library and its version (Rubber Band v1.8.1 among them).",
+    "note": "Only ffmpeg.exe and ffprobe.exe are shipped, under resources/ffmpeg with the build's LICENSE and README. The Sift source archive includes the FFmpeg source tarball above. Sources for the external libraries are available from their upstream projects at the versions README.txt names; the builder's own build scripts are not published, so this is not a verified reproducible build."
   }
 }
