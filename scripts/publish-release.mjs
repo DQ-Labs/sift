@@ -1,25 +1,56 @@
-import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+// Publishes dist/ as a GitHub release for the pushed v<version> tag.
+//
+//   node scripts/publish-release.mjs --check-tag   only verify the tag
+//   node scripts/publish-release.mjs               verify assets and publish
+//
+// Runs in .github/workflows/release.yml with GH_TOKEN set to the workflow token.
+import { spawnSync } from 'node:child_process';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { releaseAssetNames } from './release-files.mjs';
+import { sha256File } from './download.mjs';
+import { CHECKSUM_FILE, isPrereleaseVersion, releaseAssetNames } from './release-files.mjs';
 
-const {version}=JSON.parse(await readFile('package.json','utf8'));
-const {CI_COMMIT_TAG:tag,CI_API_V4_URL:api,CI_PROJECT_ID:project,CI_JOB_TOKEN:token,CI_PROJECT_URL:projectUrl}=process.env;
-if(tag!==`v${version}`||!api||!project||!token)throw new Error('A matching version tag and GitLab CI job credentials are required to publish a release.');
-const directory=path.resolve('dist'),files=[...releaseAssetNames(version),'SHA256SUMS.txt'];
-const manifest=await readFile(path.join(directory,'SHA256SUMS.txt'),'utf8');
-for(const name of files.filter(name=>name!=='SHA256SUMS.txt')){
-  const hash=createHash('sha256').update(await readFile(path.join(directory,name))).digest('hex');
-  if(!manifest.split('\n').includes(`${hash}  ${name}`))throw new Error(`Checksum missing or wrong for ${name}.`);
+const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+const tag = process.env.GITHUB_REF_NAME;
+if (process.env.GITHUB_REF_TYPE !== 'tag' || tag !== `v${version}`) {
+  throw new Error(`Push a tag that matches package.json: expected v${version}, got ${tag || 'no tag'}.`);
 }
-const links=[];
-for(const name of files){
-  const url=`${api}/projects/${project}/packages/generic/sift/${version}/${encodeURIComponent(name)}`;
-  const response=await fetch(url,{method:'PUT',headers:{'JOB-TOKEN':token},body:await readFile(path.join(directory,name)),signal:AbortSignal.timeout(180000)});
-  if(!response.ok)throw new Error(`Upload of ${name} failed (${response.status}).`);
-  links.push({name,url,direct_asset_path:`/${name}`,link_type:'package'});console.log(`Uploaded ${name}`);
+if (process.argv.includes('--check-tag')) {
+  console.log(`Tag ${tag} matches package.json.`);
+  process.exit(0);
 }
-const notes=`Windows x64 studio test build.\n\nChoose the Setup installer or Portable executable. Node.js is included. Install FFmpeg with Rubber Band separately (see STUDIO-SETUP.md). App data is stored in %APPDATA%/Sift. These are unsigned test builds.\n\nAGPL-3.0-only. Source archive, upstream provenance and SHA-256 checksums are attached. See THIRD_PARTY.md and UPSTREAM-SOURCES.json for dependencies. This release is a standalone Electron application; it is not a VST3 and does not provide native ASIO output.\n\nSource: ${projectUrl}/-/tree/${tag}`;
-const response=await fetch(`${api}/projects/${project}/releases`,{method:'POST',headers:{'JOB-TOKEN':token,'Content-Type':'application/json'},body:JSON.stringify({name:`Sift ${version}`,tag_name:tag,description:notes,assets:{links}})});
-if(!response.ok)throw new Error(`Release creation failed (${response.status}). Uploaded packages were retained for inspection.`);
+
+const directory = path.resolve('dist');
+const assets = releaseAssetNames(version);
+const manifest = (await readFile(path.join(directory, CHECKSUM_FILE), 'utf8')).split('\n');
+for (const name of assets) {
+  const line = `${await sha256File(path.join(directory, name))}  ${name}`;
+  if (!manifest.includes(line)) throw new Error(`Checksum missing or wrong for ${name}.`);
+}
+
+const repository = process.env.GITHUB_REPOSITORY;
+const notes = [
+  `Windows x64 build of Sift ${version}. Choose **Sift-${version}-Setup-x64.exe** (installs per user, updates itself) or the **Portable** EXE (notifies about updates). FFmpeg with Rubber Band and Node.js are included. Builds are unsigned: Windows SmartScreen may ask you to confirm the first launch.`,
+  '',
+  `Your library, gems, sets and exports live in \`%APPDATA%\\Sift\` and survive updates. Setup and studio checks: [STUDIO-SETUP.md](https://github.com/${repository}/blob/${tag}/docs/STUDIO-SETUP.md). Verify downloads against ${CHECKSUM_FILE}.`,
+  '',
+  `AGPL-3.0-only. Bundled FFmpeg is GPLv3; the source archive includes Sift's source plus the Essentia.js and FFmpeg sources. See THIRD_PARTY.md and UPSTREAM-SOURCES.json.`,
+  '',
+].join('\n');
+const notesFile = path.join(directory, 'release-notes.md');
+await writeFile(notesFile, notes);
+
+const args = [
+  'release', 'create', tag,
+  ...assets.map(name => path.join(directory, name)),
+  path.join(directory, CHECKSUM_FILE),
+  '--title', `Sift ${version}`,
+  '--notes-file', notesFile,
+  '--generate-notes',
+  '--verify-tag',
+];
+if (isPrereleaseVersion(version)) args.push('--prerelease');
+const result = spawnSync('gh', args, { stdio: 'inherit' });
+if (result.error) throw result.error;
+if (result.status !== 0) throw new Error(`gh release create failed (${result.status}).`);
 console.log(`Published ${tag}.`);

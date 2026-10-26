@@ -1,68 +1,93 @@
 # Builds and releases
 
-Every branch/MR pipeline runs the full Node test suite on Linux, including analysis,
-tempo/key processing and handoffs, then prepares a source archive. GitLab's hosted
-Windows x64 runner runs the unit tests and produces an installer and portable EXE.
-The packaged backend is tested using the shipped executable and source: HTTP/UI
-assets, demo audio, a writable catalogue, persistence across restart and shutdown.
+Sift is built and published by GitHub Actions in [DQ-Labs/sift](https://github.com/DQ-Labs/sift). Nothing is deployed to a studio machine automatically; installed copies pick up a release through the updater.
 
-The hosted Windows server lacks desktop multimedia DLLs needed by desktop FFmpeg
-builds. It does not run the FFmpeg integration or Electron window/portable-launch
-acceptance tests. Run the full local Windows verification below on desktop Windows;
-these checks must pass before approving a studio release. CI does not verify audio
-interface playback, ASIO, native drag-and-drop or a real DAW import.
+## Continuous integration
 
-Download the `windows_build` job artifacts for an untagged test build. They expire
-after 14 days. No deployment to a studio machine happens automatically.
+[`ci.yml`](../.github/workflows/ci.yml) runs on every pull request and every push to `main`:
+
+| Job | What it does |
+| --- | --- |
+| Linux tests | In `node:22-bookworm`: installs Debian's FFmpeg (with Rubber Band), `npm ci --ignore-scripts`, checks FFmpeg, runs the full `npm test` suite including analysis, tempo/key processing and handoffs. |
+| Source archive | Builds `Sift-<version>-Source.tar.gz`: the committed tree plus the Essentia.js wrapper source and the FFmpeg source tarball. |
+| Windows build | On `windows-2025`: unit tests, fetches the pinned FFmpeg, builds the NSIS installer and portable EXE (`npm run dist:win`), and runs `npm run test:packaged -- --headless`: package layout and identity, the bundled FFmpeg and its `rubberband` filter, `app-update.yml`/`latest.yml`, and the packaged backend (HTTP/UI assets, demo audio, writable catalogue, persistence across restart, clean shutdown). |
+
+The installer, portable EXE, `latest.yml` and source archive are attached to each run as artifacts for 14 days, so any pull request can be installed for testing.
+
+CI does not open a visible Electron window, play audio, test native drag-and-drop or import into a DAW. Run the local checks below on desktop Windows before tagging a release.
 
 ## Publish a version
 
-1. Change the version in `package.json` and update `package-lock.json` using
-   `npm install --package-lock-only --ignore-scripts`.
-2. Commit, push, then tag that commit with its matching version:
+1. Set the version in `package.json` and update the lockfile:
 
-   ```powershell
-   git tag v0.3.0-alpha.4
-   git push origin v0.3.0-alpha.4
+   ```sh
+   npm version 0.4.0-alpha.2 --no-git-tag-version --ignore-scripts
    ```
 
-3. The tag pipeline must pass Linux audio integration tests, Windows unit tests,
-   packaging and the headless packaged-backend check. Only then does it upload binaries, source, setup guide and
-   SHA256SUMS.txt to GitLab's generic package registry and create the release.
+2. Merge that change to `main` through a pull request with green CI.
+3. Tag the merge commit with the matching version and push the tag:
 
-The publish job uses the existing CI_JOB_TOKEN. Do not add a personal access token
-to the repository or CI configuration. Stable download links point to the package
-registry, so release assets do not disappear with expiring job artifacts.
+   ```sh
+   git tag v0.4.0-alpha.2
+   git push origin v0.4.0-alpha.2
+   ```
 
-GitLab's hosted Windows runners are beta and can take several minutes to provision.
-Account verification, compute quotas or runner availability may require action in
-GitLab. This pipeline does not install or register a runner on your workstation.
+[`release.yml`](../.github/workflows/release.yml) then:
+
+1. checks that the tag equals `v` + the `package.json` version;
+2. runs the whole CI workflow on the tag;
+3. writes `SHA256SUMS.txt` and publishes a GitHub Release named *Sift &lt;version&gt;* with:
+   - `Sift-<version>-Setup-x64.exe` and its `.blockmap`
+   - `Sift-<version>-Portable-x64.exe`
+   - `Sift-<version>-Source.tar.gz`
+   - `latest.yml` (read by the updater)
+   - `STUDIO-SETUP.md`
+   - `SHA256SUMS.txt`
+
+Versions with a hyphen (`-alpha.N`, `-beta.N`, `-rc.N`) are published as pre-releases. Release notes are a short standard header followed by GitHub's generated list of merged pull requests; edit the release afterwards to add highlights. The updater shows the start of these notes.
+
+The workflow uses the built-in `GITHUB_TOKEN` with `contents: write` for the publish job only. No personal access token is needed.
+
+If a tag's run fails, fix the problem on `main`, delete the tag (`git push origin :refs/tags/v<version>`) and the draft release if one was left, and tag again, or bump the version.
+
+## How updates reach users
+
+electron-builder writes `resources/app-update.yml` (pointing at this repository) into the app, and `latest.yml` (version, file name, SHA-512) next to the installer. The installed app's updater reads the newest release from GitHub, downloads `latest.yml` from it, and when the version is newer, offers the installer. Someone running a pre-release is offered newer pre-releases and stable releases; someone on a stable release is only offered stable releases. The portable build reads the GitHub releases API and links to the release page.
+
+A release missing `latest.yml` or the Setup EXE breaks updates for everyone, so always publish through the workflow.
+
+## Bundled FFmpeg
+
+`UPSTREAM-SOURCES.json` pins the Windows FFmpeg build (URL and SHA-256) under `ffmpeg.windows`, and the FFmpeg source tarball under `ffmpeg.source`. `npm run fetch:ffmpeg` downloads and verifies the archive and places `ffmpeg.exe`, `ffprobe.exe` and the build's licence in `build/ffmpeg` (ignored by git); `dist:win` runs it first, and electron-builder copies the folder to `resources/ffmpeg`.
+
+To move to a newer FFmpeg:
+
+1. Pick a release from [GyanD/codexffmpeg](https://github.com/GyanD/codexffmpeg/releases) and download its `essentials_build.zip`.
+2. Confirm its `README.txt` lists `librubberband`, and record the SHA-256 (`Get-FileHash -Algorithm SHA256` or `sha256sum`).
+3. Update `ffmpeg.version`, `ffmpeg.build`, `ffmpeg.windows` and `ffmpeg.source` in `UPSTREAM-SOURCES.json`, and the FFmpeg section of `THIRD_PARTY.md`. Leaving a `sha256` empty makes the download fail and print the file's hash, which you can then check and pin.
+4. Open a pull request; the Windows job verifies the filter.
 
 ## Local Windows verification
 
-With Node.js 22+ and FFmpeg/Rubber Band installed:
+With Node.js 22+ on desktop Windows:
 
 ```powershell
-npm ci
+npm ci --ignore-scripts
+node node_modules/electron/install.js
+npm run fetch:ffmpeg
+$env:SIFT_FFMPEG = "$PWD\build\ffmpeg\ffmpeg.exe"; $env:SIFT_FFPROBE = "$PWD\build\ffmpeg\ffprobe.exe"
 npm test
 npm run test:playback
 npm run dist:win
 npm run test:packaged
-node scripts/source-archive.mjs
-npm run release:checksums
 ```
 
-Run source-archive.mjs from a committed tree: it exports tracked HEAD and includes
-the published Essentia.js wrapper source at its npm gitHead revision. See
-UPSTREAM-SOURCES.json for dependency provenance and upstream build limitations.
+`test:packaged` without `--headless` also runs the full server test suite against the packaged runtime and bundled FFmpeg, and launches the installed-layout and portable EXEs in smoke-test mode to check the renderer, preload, bundled FFmpeg and backend shutdown. Then install the Setup EXE and work through [Studio setup](STUDIO-SETUP.md).
 
-Signing is not configured. No automatic updater is installed. Updates replace the
-application, while catalogue data stays in the user's roaming app-data folder.
+To test an update end to end, install the previous release, publish a newer pre-release, and start the old copy: it should offer the update, install it after the restart prompt, and keep the library.
+
+Signing is not configured; builds are unsigned.
 
 ## VST3
 
-The Electron standalone application cannot be exported as a VST3 binary. A real
-plugin needs a native host-facing processor/controller, host transport and sample
-rate/block-size handling, persistent plugin state and a real-time audio path.
-Steinberg's VST3 SDK or another suitable plugin framework can support that work.
-This pipeline intentionally publishes only working standalone Windows apps.
+The Electron standalone application cannot be exported as a VST3 binary. A real plugin needs a native host-facing processor/controller, host transport and sample rate/block-size handling, persistent plugin state and a real-time audio path. Steinberg's VST3 SDK or another suitable plugin framework can support that work. The release workflow publishes only the standalone Windows app.

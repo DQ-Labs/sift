@@ -1,90 +1,101 @@
-# Sift 0.3 studio preview
+# Sift
 
-A separate, local sample-discovery app. Built from scratch; no Upcycle binaries, code or assets are used.
+[![CI](https://github.com/DQ-Labs/sift/actions/workflows/ci.yml/badge.svg)](https://github.com/DQ-Labs/sift/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/DQ-Labs/sift?include_prereleases&label=release)](https://github.com/DQ-Labs/sift/releases)
 
-## Windows downloads
+Sift is a sample-discovery workbench for Windows. It indexes the audio already on your drives, estimates each sample's tempo and key, and builds four-layer song starters that are tempo- and key-matched. Audition them, lock the layers you like, reroll the rest, then export a mix or drag the stems straight into FL Studio.
 
-Download the Windows x64 installer or portable EXE from [GitLab Releases](https://gitlab.com/JF2B/sift/-/releases). Node.js is bundled; FFmpeg with Rubber Band is installed separately. See [Studio Setup](docs/STUDIO-SETUP.md) for installation and audio-hardware checks. These are standalone, unsigned test builds, not VST3 plugins. Installed and portable builds store the catalogue in `%APPDATA%\Sift` and stop their own backend when closed.
+Everything runs locally. Sift never uploads, copies or modifies your samples, and it needs no account or internet connection (apart from checking for updates, which you can turn off).
 
-Branch/MR pipelines test Linux and Windows, build both EXEs, and smoke-test the packaged backend. Matching version tags publish permanent release downloads, sources and checksums. See [Releasing](docs/RELEASING.md).
+## Install
 
-## Run
+1. Open the [latest release](https://github.com/DQ-Labs/sift/releases).
+2. Download **`Sift-<version>-Setup-x64.exe`** and run it. It installs for your user only; no administrator rights are needed.
+3. Start Sift from the Start menu and add your sample folders.
 
-Install Node.js 22+ and FFmpeg/FFprobe with the Rubber Band filter on PATH, then run `npm ci --ignore-scripts` in the checkout. Double-click **Start Sift.cmd** on Windows, or run `npm start`, then open http://127.0.0.1:4317. Check stretching support with `ffmpeg -hide_banner -h filter=rubberband`. Optional `SIFT_FFMPEG` / `SIFT_FFPROBE` environment variables can specify executable paths. There is no build step. After installation, audio processing is local and offline.
+FFmpeg (with Rubber Band, used for tempo and key matching) and Node.js are included. Builds are not code-signed, so Windows SmartScreen may show *Windows protected your PC* the first time: choose **More info → Run anyway**. Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
 
-The launcher starts a hidden local server and opens your default browser. The server listens only on the IPv4 and IPv6 loopback addresses (`127.0.0.1` and `::1`), so `http://localhost:4317` also works. On systems without IPv6, IPv4 remains available. Restart it after backend changes.
+Prefer not to install? **`Sift-<version>-Portable-x64.exe`** runs from anywhere and uses the same data folder. It tells you when a new version is out but does not update itself.
 
-## DAW handoff and FL Studio
+Setting Sift up on a studio PC, including the audio and FL Studio checks, is covered in [Studio setup](docs/STUDIO-SETUP.md).
 
-Use **Send to FL Studio → Prepare WAV stems**. Each selected layer becomes a stereo PCM WAV at 44.1 kHz / 16-bit, exactly four bars in 4/4, with the session tempo/key processing, source starts, repeats and layer volume baked in. The default follows mute/solo; **Include muted and non-solo layers** exports every loaded layer. All stems use one shared attenuation, preserving their balance when recombined. Filenames begin with layer number, role, session BPM and the rendered key; `sharp` denotes sharps. The ZIP includes `session.json` and FL Studio import notes. No absolute source paths are included in that manifest.
+### Updates
 
-For **direct Windows file dragging**, double-click **Start Sift Desktop.cmd**, run `npm run desktop`, or choose **Open desktop Sift** in the browser handoff panel. The desktop window uses Electron 44.9.2 with context isolation, sandboxed rendering and a small preload bridge. It loads the same loopback app and reuses its catalogue. If a local server is already running, restart it after upgrading backend files. The original browser launcher still works. Electron is optional for browser operation; a fresh desktop setup needs `npm ci` (or `node node_modules/electron/install.js` after an install with scripts disabled) to fetch its official runtime. Desktop browser state lives under `data/desktop-profile/`.
+The installed app checks GitHub Releases a few seconds after it starts. When a newer version exists it shows the release notes and asks before downloading; after the download it asks before restarting. You can choose **Skip this version**, check by hand with **Help → Check for updates…**, or turn off the launch check by unticking **Help → Check for updates on launch**. Setting the environment variable `SIFT_DISABLE_UPDATE_CHECK=1` also disables it.
 
-Prepare stems **in the desktop window**, then drag a stem handle or **Drag all stems** into FL Studio’s Playlist. These are native file drags referencing WAVs already written to disk, using Electron’s `webContents.startDrag`; no browser URL or blob is sent to the DAW. Set the FL Studio project to the exported BPM and align clips at the same bar; keep the imported audio at its rendered speed. DAW import behavior is host-dependent; manual downbeat placement and source BPM accuracy still matter.
+Updates replace the program only. Your library, gems, sets, exports and settings stay in `%APPDATA%\Sift`.
 
-In browser mode, use **Download ZIP**, an individual **WAV** link, or **Open folder**, then drag the real files from Explorer. Prepared handoffs remain in `data/exports/<id>/` and are never pruned with the stretch cache: a DAW project may reference them. Keep or collect these files with your DAW project. Prepared snapshots are immutable; changing the workbench shows a stale-snapshot notice and **Prepare new snapshot** creates another export. This does not automatically save a named Sift set. The local server stays running after the desktop window closes, matching the browser launcher.
+## Using Sift
 
-Under **Library tools**, **Clean up unfinished exports** removes incomplete handoff folders with no activity for at least seven days. Completed handoffs, recent exports and active uploads are kept. This is separate from **Clean up library** and does not remove source samples, gems or saved sets.
+- **Add folder** to index a sample folder or a whole drive. Sift scans in the background and analyses tempo and key with Essentia.js.
+- **Find a combination** fills the four layers with samples that suit each other. Lock, mute, solo or **Reroll** individual layers; set the session tempo and key, and every layer is stretched and transposed to match.
+- **Export mix** writes a four-bar WAV. **Send to DAW → Prepare WAV stems** writes one WAV per layer that you can drag from Sift into FL Studio's Playlist.
+- Diamonds save **gems**; **Save set** stores the whole workbench.
 
-If analysis results cannot be saved, analysis pauses and a persistent warning appears above the workbench, including the save error. Check disk space and write access, then choose **Retry save and resume**. The warning clears only after a successful save.
+The [user guide](docs/GUIDE.md) describes every control, how metadata and timing work, and the current limits.
 
-## Use
+The **Help** menu shows **About** (Sift, Electron, Node.js and FFmpeg versions, licence and data folder), **Open data folder**, **View logs** and the update controls.
 
-- **Add folder**: paste an absolute path or use the Windows folder picker, then index it. Subfolders are included; symlinks and hidden dot-prefixed entries are skipped. Your files remain in place, unmodified. Re-indexing refreshes existing files, adds new ones, and marks missing files. **Clean up library** removes missing entries from connected source folders. Missing entries used by gems, saved sets, or the workbench are kept and marked **MISSING FILE**. Unavailable source folders are skipped so disconnected drives do not lose their entries. Reconnect and rescan to restore available files; original audio is never deleted.
-- A **library processing panel** stays visible above the workbench while folders are indexed and audio analysis continues. Indexing shows the folder and sample count; analysis shows processed/remaining counts, progress and the current sample. Cancel indexing or pause/resume analysis from the panel, even with the collection collapsed. You can keep exploring while analysis runs. Pending analysis resumes after restarting Sift, unless you paused it.
-- Click a library row to audition the original. Click its diamond to save a gem. Search matches names, folders, types and keys. Use source folders, sound-type and tempo filters. Results are paginated at 50 per page.
-- **Discover** focuses on the workbench. Use **Browse collection** to reveal search, filters and samples; **/** opens it and focuses search. **All samples** and **Saved gems** keep their lists open. Analysis, metadata review and cleanup live in the expandable **Library tools** section. Each layer has a large **Reroll** button; locked layers show **Locked**. Names wrap in the workbench, and clicking a name opens its full filename, path and metadata without replacing or auditioning the sample.
-- New workbenches start empty. **Find a combination** fills or replaces unlocked layers using samples from the selected source. Type matches are preferred; within each role, rerolls favor nearby tempos, smaller key shifts and known, unconflicted metadata. Candidates near the best score are weighted randomly to retain variety; other types are a fallback when a role has no playable samples. Each layer can be locked, muted, soloed, or adjusted in volume. Double-click a sample or use **Add to workbench** to replace an unlocked layer. Saved workbenches restore exactly, including empty layers.
-- **Save set** stores the sample references, levels, mute/solo/lock state, per-layer start offsets and repeat modes, tempo, tempo-sync setting and session key. Open it later from Saved sets. Gems and sets persist in `data/library.json`. Source BPM/key corrections are library-wide; reopening an old set uses the current metadata.
-- **Export mix** renders four bars at the session tempo, as stereo 44.1 kHz / 16-bit WAV. Your browser downloads the result. Playback and export use the same prepared four-bar cycle in 4/4. Layers restart together at bar 1, with short loops repeated, long excerpts trimmed, and short one-shots padded with silence according to their timing controls. Export adds a short fade at the endpoints and attenuates peaks to prevent clipping.
-- **Space** plays/stops the workbench, **R** finds another combination, **/** focuses search, and **↑ / ↓** auditions adjacent library results. Shortcuts do not capture typing or focused controls.
+## Screenshots
 
-## What this build actually does
+_Screenshots of the workbench, library and stem handoff will be added here._
 
-This is a functional first version for reviewing the interface and sample workflow, not a complete replacement for Upcycle's DSP or a DAW plugin. It runs in a browser backed by a local Node service; it does not require cloud services, an account, external fonts or an internet connection.
+## Where things are stored
 
-Tempo and musical key are now **estimated from audio**, using Essentia.js 0.1.3. FFmpeg decodes up to the **first 60 seconds** to 44.1 kHz mono; a worker runs RhythmExtractor2013 (multifeature) and KeyExtractor (Temperley profile). An amplitude-onset gate rejects stationary-noise tempo guesses. Silence/very short sounds are left unknown; clips under four seconds get no detected BPM, and drum-tagged clips get no automatic key. The included demos are original synthesized loops generated locally.
+| What | Where |
+| --- | --- |
+| Library, gems, sets, settings | `%APPDATA%\Sift` (**Help → Open data folder**) |
+| Prepared stems | `%APPDATA%\Sift\exports` |
+| Logs | `sift.log`, `sift-error.log` and `desktop.log` in the data folder (**Help → View logs**) |
+| Program files (installer) | `%LOCALAPPDATA%\Programs\Sift` |
 
-New/changed samples and older catalogues enter a serial background queue automatically. **Pause analysis** finishes the current file; **Resume analysis** continues pending work. Pending work is recovered after restart. **Analyze this source** and **Analyze again** explicitly retry failed/completed files. Results are batched to disk, so interrupted unsaved analysis may be repeated. A SQLite catalogue remains a future scaling improvement.
-
-Metadata priority: **manual correction → explicit filename label → accepted audio estimate → weak numeric filename hint → unknown**. Demo samples retain their known generated metadata. An explicit BPM label contains `BPM`; a single plausible bare number remains only a fallback hint. Conflicting numbers, technical units such as bit depth/sample rate, and attached text are excluded. Musical key labels include a major/minor designation. Sharps and equivalent flats are normalized consistently. The table marks audio estimates with ≈ and unverified filename-number hints with ?. Select a sample and click the bottom bar's information icon for **Sample details**, which shows sources, estimates, scores and warnings. Scores are algorithm measures, not probabilities. Set a corrected BPM/key, use ½ / ×2 for tempo ambiguity, or leave a field blank to explicitly mark it unknown. **Restore label priority** clears both overrides. Audio/filename disagreements are shown with **!** in the table and can be filtered with **Metadata conflicts**. Sample details shows both values, identifies half/double tempo and relative-major/minor ambiguity, and lets you choose either value before saving. Differences within the greater of 2 BPM or 1.5% of the label are treated as estimation drift. Manual corrections resolve the review flag while retaining the evidence. Corrections survive reanalysis/rescans and never modify original files. Sound types use instrument/role words in the filename, then the nearest informative folder within the indexed source. A bass stem inside Melody Loops remains Bass. Generic folders outside the indexed root are ignored. Type provenance is shown in the table tooltip and Sample details. Existing catalogue entries are refreshed on startup/rescan; a change into or out of Drums triggers fresh analysis because drum classification suppresses automatic key detection. Half/double-tempo and relative-major/minor ambiguity are possible; opening excerpts can miss later musical content.
-
-Original auditioning uses browser audio codecs, so some AIFF/AAC variants may not play even though FFmpeg can analyze/stretch them. FFprobe supplies duration, sample-rate, channel and bit-depth metadata during analysis. Stored waveform peaks cover the analyzed excerpt; auditioning can display a complete waveform for decodable files.
-
-**Tempo sync and session key** use Rubber Band to process tempo and pitch independently. Choose a **Session key** to transpose known pitched layers by the shortest distance (−6 to +5 semitones). Relative major/minor share a scale: C major can stay unchanged in an A minor session, and E major shifts −4 semitones to C major. Transposition preserves the source major/minor character; it does not rewrite chords, so matching a scale does not guarantee compatible chord progressions. Drums always keep their pitch, even when labeled with a key. Unknown-key samples keep their pitch and are marked on the layer and status strip. **Original keys** disables pitch matching. Original sample auditioning always stays at source pitch/speed. Locks preserve sample choices; session tempo/key still apply to locked layers. New empty workspaces start at A minor with tempo sync enabled; older workspaces and sets without a session key retain original pitches until a key is selected. Playback and export use the same processed audio. Unknown-tempo layers stay at original speed, with a message at playback; they can still be pitch-shifted when a source key is known. Session key changes restart active playback using the new cached render. New tempos prepare locally and restart playback; this is cached rendering, not continuous real-time tempo automation. There is no automatic downbeat detection, chord-progression matching, VST/AU packaging, near-duplicate matching. Direct stem dragging is available through the desktop launcher.
-
-**Layer timing** uses a shared four-bar cycle in 4/4. Click a layer’s **clock** to leave its start blank to skip leading silence, or set an exact offset in **original-file seconds**, then preview that start at original pitch/speed (up to eight seconds), and choose Auto, Once, Every beat, Every bar, Every 2 bars or Every 4 bars. Automatic start scans all channels for the first audible sound using 5 ms RMS blocks (−46 dB relative to the strongest block, with a −80 dB absolute floor), retaining up to 5 ms before the attack. Layer labels show the chosen source time. This detects leading silence, not musical meter: place the first downbeat by ear. Enter **0** to preserve the exact file beginning; numeric offsets always stay exact. Offsets are converted through tempo stretching before the source excerpt is copied. Offsets past the end are rejected. Timing is stored per layer in workspaces/sets; replacing a sample resets its source-specific timing, while locked/untouched layers keep it.
-
-Auto repeats only 1-, 2-, 4- or 8-beat excerpts close to the expected duration (within 1.5%, bounded to 20–80 ms), with usable source BPM and tempo sync or matching source/session BPM. Unknown BPM, unverified numeric hints, unresolved BPM conflicts or unsynced different tempos disable automatic short-loop repetition. Other clips play once per four-bar cycle, with trailing silence or truncation at the cycle boundary. Manual repeats retrigger on the selected grid interval, padding short sounds or cutting longer ones; they do not add further stretching. Layer labels show the actual repeat/crop behavior and warn when internal beat alignment needs checking. Auto can trim a small tail at the selected boundary; edge fades reduce clicks.
-
-All boundaries are computed from one integer-frame cycle, including subdivisions at fractional tempos. Playback loops the prepared cycle; export uses the same cycle construction. Workbench waveforms show these prepared cycles (including repeats and silence), and all playheads share the bar/beat clock. Library audition waveforms still show original files. Older sets without timing receive automatic first-sound starts and Auto repeats; existing explicit numeric offsets are preserved. All now follow the shared cycle.
-
-Renders are cached in `data/stretch-cache/`, keyed by file identity/size/modification time, source/target tempo, pitch shift and rendering options. One render runs at a time, identical pending requests share a render, and changed audio or metadata creates a new result. Old cache files are pruned to approximately 512 MiB. Tempo/key sync accepts source clips up to 3 minutes, stretched output up to 6 minutes, and rates from 0.25× to 4×.
-
-Only selected samples are decoded for the workbench, with a bounded recent-buffer cache. Files above 100 MB can be auditioned but are rejected by the workbench. Decoded audio larger than 128 MiB is also rejected. Sample indexing is asynchronous and cancellable. Playback requires sample drives to remain connected. Keep `data/` to preserve favorites and sets; it contains absolute local sample paths and should not be shared publicly.
-
-The browser cache holds up to 12 decoded buffers / approximately 160 MiB; actively playing buffers stay in use separately. Keep `data/` to preserve your discoveries. The catalogue is still held in memory and stored as JSON.
-
-## Repository contents
-
-The repository contains Sift's source, launchers, dependency lockfile and tests. It does not include sample packs, third-party installers, installed dependencies, local screenshots or your catalogue. Sift generates its original synthesized demo sounds on first launch. Add your own sample folders through the app.
-
-Keep `data/`, `sounds/`, `test-output/`, logs and credentials out of commits. The catalogue and desktop profile can contain local file paths and personal state; exported stems may contain your audio. These paths are excluded by `.gitignore`.
-
-## License
-
-Sift is licensed under AGPL-3.0-only; see [LICENSE](LICENSE). Third-party components retain their own licenses. See [THIRD_PARTY.md](THIRD_PARTY.md) and [UPSTREAM-SOURCES.json](UPSTREAM-SOURCES.json) for notices, source references and build provenance.
+Set `SIFT_DATA_DIR` before starting Sift to use a different data folder. The catalogue contains absolute paths to your samples; don't share it publicly.
 
 ## Development
 
-Catalogue saves keep the previous successful state in `data/library.backup.json`. If `library.json` is damaged, startup preserves its exact contents in a unique `.corrupt-…` file and restores the backup. If neither catalogue can be read, damaged files are preserved and a fresh collection starts. A notice appears in the app and server log. The backup can be one save behind the latest state. Workspace and saved-set writes validate track types, IDs, levels, flags, tempo and names; older partial workspaces receive safe defaults on load.
+You need Windows or Linux, Node.js 22+, and FFmpeg/FFprobe with the `rubberband` filter on `PATH` (Debian/Ubuntu: `apt-get install -y ffmpeg`). There is no build step.
 
-Metadata updates may provide BPM, key, or both. Omitted fields retain their existing overrides; explicit `null` means unknown. Sample IDs retain exact path case, and scans preserve older IDs so gems and sets keep their references. Windows case-only aliases are merged only when filesystem identity confirms they are the same file; distinct files in case-sensitive directories remain separate.
+```sh
+npm ci --ignore-scripts
+npm test                 # node --test; four DSP/server tests need FFmpeg
+npm run desktop          # Electron window (run `node node_modules/electron/install.js` once first)
+npm start                # local server only, then open http://127.0.0.1:4317
+```
 
-`npm test` covers shared cycle boundaries at fractional tempos and 44.1/48 kHz, stereo offsets through stretching, one-shot silence, repeat tails, timing persistence and validation; key/relative-scale matching, weighted combination selection, locked/untouched-layer preservation, saved session keys, stereo pitch transposition independent of tempo, unknown-metadata fallbacks and render cache separation; WAV generation/header parsing; audio-only 80/120/160 BPM and major/minor key fixtures; silence/noise/one-shot abstention; persistent overrides and corrupt-file recovery; Rubber Band duration at 0.75× and 1.5× tempo with stereo tones independently verified at 440 Hz and 660 Hz; cache reuse; metadata conflicts, enharmonic keys, weak versus explicit filename hints, folder classification and retained overrides; and the local API, recursive scanning, analysis queue, metadata validation, rendered audio, ranges, gems and sets.
+On Windows, **Start Sift Desktop.cmd** opens the desktop window from a checkout, and **Start Sift.cmd** starts a hidden server and opens your browser. Browser mode is a development convenience: it serves the same app, but native stem dragging needs the desktop window. The hidden server writes `sift.log`/`sift-error.log` in the checkout and runs until stopped; use `npm start` for a server you can stop with Ctrl+C. The server listens only on `127.0.0.1` and `::1`.
 
-`npm run test:playback` uses a hidden Electron window to verify the processing panel and render repeated stereo cycles in Chromium at 22.05/44.1/48 kHz. It checks four consecutive cycles and replays cached buffers, including tempos whose floating-point loop boundaries previously broke after the first pass. Playback uses a guard frame outside the exact cycle to keep those boundaries inside the physical audio buffer.
+From a development checkout the desktop window prefers `build/ffmpeg` (fetched with `npm run fetch:ffmpeg` on Windows), then `SIFT_FFMPEG`/`SIFT_FFPROBE`, then WinGet's links, then `PATH`.
 
-Files: `server.mjs` (API), `lib/audio.mjs` (hints/demos), `lib/analysis.mjs` (queue), `lib/metadata.mjs` (label priority, conflicts and classification), `lib/analysis-worker.mjs` (Essentia), `lib/media.mjs` (FFmpeg/Rubber Band/cache), `public/` (interface/playback, with shared key matching and combination ranking in `public/harmony.js`, plus playback/export cycle preparation in `public/timing.js`). See `THIRD_PARTY.md` for dependency provenance and licenses.
+Building the Windows installer and portable EXE (Windows only):
 
-The hidden server stays running until Windows exits or the process is stopped. To run with a visible process that you can stop with Ctrl+C, use `npm start` instead of the launcher. The launcher's stdout/stderr are written to `sift.log` and `sift-error.log`.
+```powershell
+npm ci --ignore-scripts
+node node_modules/electron/install.js
+npm run dist:win         # fetches the pinned FFmpeg, then builds into dist/
+npm run test:packaged    # full packaged checks on desktop Windows
+```
+
+`npm run icon` regenerates `build/icon.ico` from `public/favicon.svg`.
+
+| Path | Contents |
+| --- | --- |
+| `server.mjs`, `lib/` | Local HTTP API, catalogue, analysis queue, FFmpeg/Rubber Band rendering, stem handoff |
+| `public/` | Front end (vanilla ES modules) |
+| `desktop/` | Electron shell: window, Help menu, updater, FFmpeg discovery |
+| `scripts/` | Packaging, release and test helpers |
+| `tests/` | `node --test` suites |
+| `.github/workflows/` | CI (Linux tests, Windows build) and tagged releases |
+
+Every pull request runs the Linux test suite and builds and smoke-tests the Windows package; see [Releasing](docs/RELEASING.md) for how versions are published. The roadmap is [SIFT_PLAN.md](SIFT_PLAN.md).
+
+Keep `data/`, `sounds/`, `test-output/`, logs and credentials out of commits; they can contain local paths and personal audio.
+
+## Contributing and support
+
+Found a bug or have an idea? [Open an issue](https://github.com/DQ-Labs/sift/issues/new/choose). For a bug, **Help → About → Copy details** gives the versions to include.
+
+## Licence
+
+Sift is published by DQ Labs under the [GNU AGPL v3.0 only](LICENSE). The installer bundles FFmpeg (GPLv3), Essentia.js (AGPL-3.0), Electron (MIT) and other components under their own licences; see [THIRD_PARTY.md](THIRD_PARTY.md) and [UPSTREAM-SOURCES.json](UPSTREAM-SOURCES.json). Each release's source archive contains Sift's source and the Essentia.js and FFmpeg sources.
+
+Sift was inspired by Aria Labs' Upcycle. It is built from scratch and uses none of Upcycle's code, assets or text.
