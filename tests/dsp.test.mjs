@@ -125,13 +125,12 @@ test('each layer type gets its own Rubber Band options, in the cache key too', (
   assert.match(options.Drums, /detector=percussive/);
   assert.match(options.Drums, /window=short/);
   assert.match(options.Vocal, /formant=preserved/);
-  for (const type of ['Melodic', 'Texture']) {
-    assert.match(options[type], /transients=smooth/);
-    // Smooth transients with channels together collapse a stereo pair.
-    assert.match(options[type], /channels=apart/);
-  }
+  for (const type of ['Melodic', 'Texture']) assert.match(options[type], /transients=smooth/);
   assert.match(options.Texture, /window=long/);
-  assert.match(options.Bass, /channels=together/);
+  // Only drums process channels together; with smooth or mixed transients,
+  // channels=together lets one stereo channel collapse into or leak into the other.
+  assert.match(options.Drums, /channels=together/);
+  for (const type of trackTypes.filter(type => type !== 'Drums')) assert.match(options[type], /channels=apart/);
   assert.equal(rubberbandOptions('Unknown'), options.Other);
   assert.equal(new Set(Object.values(options)).size, trackTypes.length, 'every type renders differently');
   assert.equal(rubberbandFilter({ rate: 1.5, semitones: 2, type: 'Drums' }), `rubberband=tempo=1.50000000:pitch=1.1224620483:${options.Drums}`);
