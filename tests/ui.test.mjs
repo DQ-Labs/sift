@@ -60,6 +60,26 @@ async function openApp(browser, base, setup = async () => {}) {
   return { page, errors, result };
 }
 
+// Makes the real server look like one from before the query API: ?lite=1 is
+// ignored, the query routes and diagnostics are missing, and capabilities
+// carry no version.
+async function installLegacyServer(page, base) {
+  const missing = ['/api/samples', '/api/combination', '/api/diagnostics'];
+  await page.route(url => url.href.startsWith(base), async route => {
+    const url = new URL(route.request().url());
+    if (missing.some(prefix => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))) {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"Not found"}' });
+    }
+    if (url.pathname === '/api/library' && url.searchParams.has('lite')) return route.continue({ url: `${base}/api/library` });
+    if (url.pathname === '/api/capabilities') {
+      const response = await route.fetch();
+      const { version, ...rest } = await response.json();
+      return route.fulfill({ response, json: rest });
+    }
+    return route.continue();
+  });
+}
+
 const trackNames = page => page.$$eval('.track-name', elements => elements.map(element => element.textContent));
 const catalogState = page => page.evaluate(async () => {
   const { catalog, state } = await import('/state.js');
@@ -121,7 +141,7 @@ test('front end against a server without the query API', { skip: !chromium && 'P
   if (!browser) return t.skip('Chromium is not available');
   t.after(() => browser.close());
   const base = await startServer(t, 44331);
-  const { page, errors } = await openApp(browser, base);
+  const { page, errors } = await openApp(browser, base, page => installLegacyServer(page, base));
 
   assert.deepEqual(await catalogState(page).then(({ mode, held }) => ({ mode, held })), { mode: 'legacy', held: 12 });
   assert.equal(await page.$eval('#versionLabel', element => element.hidden), true, 'no version without /api/capabilities.version');
@@ -130,6 +150,30 @@ test('front end against a server without the query API', { skip: !chromium && 'P
   const elapsed = await rerollWhenPrefetched(page, 1);
   assert.ok(elapsed < 1500, `prefetched reroll restarted in ${elapsed} ms`);
   await page.click('#playMix');
+
+  // Off the demo tempo every layer is stretched: background renders ask for
+  // prefetch priority and audible layers for 'now'.
+  const priorities = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/api/stretch')) priorities.push(request.postDataJSON().priority);
+  });
+  await page.fill('#tempo', '100');
+  await page.press('#tempo', 'Enter');
+  await page.click('#playMix');
+  await isPlaying(page);
+  await rerollWhenPrefetched(page, 2);
+  await page.click('#playMix');
+  assert.ok(priorities.includes('now') && priorities.includes('prefetch'), `priorities sent: ${priorities.join(', ')}`);
+  assert.ok(priorities.every(priority => priority === 'now' || priority === 'prefetch'));
+
+  // The timing dialog offers first beat (default) or first sound.
+  await page.click('[data-track="0"] [data-action="timing"]');
+  assert.equal(await page.$eval('#timingStartMode', element => element.value), 'beat');
+  await page.selectOption('#timingStartMode', 'sound');
+  await page.click('#timingForm [type=submit]');
+  await page.waitForFunction(() => !document.querySelector('#timingDialog').open);
+  const timed = await (await fetch(`${base}/api/library`)).json();
+  assert.deepEqual(timed.workspace.tracks[0].timing, { offset: null, repeat: 'auto', start: 'sound' });
 
   // Variety persists in the workspace.
   await page.$eval('#variety', element => {
@@ -228,6 +272,30 @@ test('front end against the query API contract with a large catalogue', { skip: 
   const elapsed = await rerollWhenPrefetched(page, 2);
   assert.ok(elapsed < 1500, `prefetched reroll restarted in ${elapsed} ms`);
   await page.click('#playMix');
+
+  // Off the demo tempo every layer is stretched: background renders ask for
+  // prefetch priority and audible layers for 'now'.
+  const priorities = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/api/stretch')) priorities.push(request.postDataJSON().priority);
+  });
+  await page.fill('#tempo', '100');
+  await page.press('#tempo', 'Enter');
+  await page.click('#playMix');
+  await isPlaying(page);
+  await rerollWhenPrefetched(page, 2);
+  await page.click('#playMix');
+  assert.ok(priorities.includes('now') && priorities.includes('prefetch'), `priorities sent: ${priorities.join(', ')}`);
+  assert.ok(priorities.every(priority => priority === 'now' || priority === 'prefetch'));
+
+  // The timing dialog offers first beat (default) or first sound.
+  await page.click('[data-track="0"] [data-action="timing"]');
+  assert.equal(await page.$eval('#timingStartMode', element => element.value), 'beat');
+  await page.selectOption('#timingStartMode', 'sound');
+  await page.click('#timingForm [type=submit]');
+  await page.waitForFunction(() => !document.querySelector('#timingDialog').open);
+  const timed = await (await fetch(`${base}/api/library`)).json();
+  assert.deepEqual(timed.workspace.tracks[0].timing, { offset: null, repeat: 'auto', start: 'sound' });
   assert.ok(stats.combinations >= 2);
 
   await exportAndHandoff(page);
