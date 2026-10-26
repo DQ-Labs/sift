@@ -230,7 +230,7 @@ const handleRequest = async (req, res) => {
       try { return await streamFile(req, res, sample.path); } catch (error) { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return json(res, { error: 'This sample is missing. Reconnect its drive or rescan its folder.' }, 404); throw error; }
     }
     if (['GET', 'HEAD'].includes(req.method)) {
-      const files = { '/': 'index.html', '/app.js': 'app.js', '/workspace.js': 'workspace.js', '/harmony.js': 'harmony.js', '/timing.js': 'timing.js', '/library-activity.js':'library-activity.js', '/export-audio.js':'export-audio.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg' };
+      const files = { '/': 'index.html', '/app.js': 'app.js', '/workspace.js': 'workspace.js', '/harmony.js': 'harmony.js', '/timing.js': 'timing.js', '/library-activity.js':'library-activity.js', '/export-audio.js':'export-audio.js', '/api.js':'api.js', '/ui.js':'ui.js', '/state.js':'state.js', '/catalog-client.js':'catalog-client.js', '/workbench-model.js':'workbench-model.js', '/player.js':'player.js', '/workbench.js':'workbench.js', '/timing-dialog.js':'timing-dialog.js', '/collection.js':'collection.js', '/details.js':'details.js', '/handoff.js':'handoff.js', '/library-status.js':'library-status.js', '/help.js':'help.js', '/dialogs.js':'dialogs.js', '/shortcuts.js':'shortcuts.js', '/styles.css': 'styles.css', '/favicon.svg': 'favicon.svg' };
       if (files[url.pathname]) return await streamFile(req, res, path.join(here, 'public', files[url.pathname]));
     }
     json(res, { error: 'Not found' }, 404);

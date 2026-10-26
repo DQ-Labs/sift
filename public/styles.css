@@ -28,3 +28,28 @@
 
 .track .track-type{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.track .track-type .track-match{display:inline;letter-spacing:0;margin:0;font-size:9px;line-height:1.3;font-weight:400}
 #handoffDialog{width:720px;max-height:90vh;overflow:auto}#handoffDialog h2{margin-bottom:10px}#handoffMode{margin-bottom:16px}.handoff-option{display:flex;align-items:center;gap:8px;font:11px var(--font);letter-spacing:0;margin:0}.handoff-option input{accent-color:var(--accent);width:14px;height:14px}.handoff-prepare{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}#handoffProgress{font-size:11px;margin:12px 0 0;color:var(--accent)}#handoffSnapshot{font-size:10px;color:#a6c59a;margin:20px 0 8px}#handoffSnapshot.stale{color:var(--accent)}#handoffSummary{font-size:11px;margin:0 0 12px;color:#becbb5}.handoff-file{display:flex;align-items:center;gap:9px;border-top:1px solid #354331;padding:12px 0}.handoff-file>div{flex:1;min-width:0}.handoff-file strong{display:block;font-size:11px;color:#d2dfc5;font-weight:500;margin-bottom:5px}.handoff-file>div>span{display:block;font:9px var(--mono);overflow-wrap:anywhere;line-height:1.6;color:#91a783}.stem-drag{display:inline-flex;justify-content:center;align-items:center;gap:7px;min-height:40px;padding:9px 12px;border:1px solid #8e9067;border-radius:5px;background:#333e2e;color:#d7dfbc;font-size:11px;cursor:grab;white-space:nowrap}.stem-drag:active{cursor:grabbing}.stem-drag svg{height:15px;width:15px}.handoff-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}#handoffFolder{display:block;font:9px var(--mono);color:#809773;overflow-wrap:anywhere;line-height:1.6;margin:12px 0}@media(max-width:580px){.handoff-file{flex-wrap:wrap}.handoff-file>div{flex-basis:100%}#handoffDialog{padding:20px}}
+/* Variety control, Help & About, DAW notes and confirmations */
+.variety-control{display:flex;flex-direction:column;gap:4px;margin:0}
+.variety-control>span:first-child{font:7px var(--mono);letter-spacing:1px;color:#9ba98e}
+.variety-control output{color:var(--accent)}
+.variety-scale{display:flex;align-items:center;gap:6px}
+.variety-scale small{font:8px var(--mono);color:#82927a}
+.variety-scale input{width:96px;height:3px;padding:0;accent-color:var(--accent);cursor:pointer}
+.about-facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0 0 18px;padding:14px;border:1px solid #384932;border-radius:5px;background:#192018;font-size:11px}
+.about-facts:empty{display:none}
+.about-facts dt{font:9px var(--mono);letter-spacing:.8px;color:#9bb08e;text-transform:uppercase;padding-top:2px}
+.about-facts dd{margin:0;color:#d3ddc9;overflow-wrap:anywhere}
+.about-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.about-actions small{margin:0;flex:1;min-width:200px}
+.about-shortcuts h3,.daw-notes h3{font-size:11px;font-weight:500;margin:0 0 5px;color:#d1ddc8}
+.about-shortcuts p{font-size:11px;margin-bottom:12px}
+.about-shortcuts .key-hint{margin-left:0}
+details.about-details summary{cursor:pointer;font-size:11px;color:#d1ddc8;margin-bottom:14px}
+#aboutDialog{max-height:90vh;overflow-y:auto}
+.daw-notes{margin-top:16px;padding-top:14px;border-top:1px solid #354331}
+.daw-notes small{margin:0 0 12px}
+.confirm-dialog{width:440px}
+.confirm-dialog h2{font-size:21px}
+.confirm-dialog .dialog-footer{justify-content:flex-end}
+@media(max-width:1150px){.variety-scale input{width:72px}}
+@media(max-width:680px){.variety-control{width:100%}.variety-scale input{flex:1}}
