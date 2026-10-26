@@ -64,7 +64,7 @@ To move to a newer FFmpeg:
 
 1. Pick a release from [GyanD/codexffmpeg](https://github.com/GyanD/codexffmpeg/releases) and download its `essentials_build.zip`.
 2. Confirm its `README.txt` lists `librubberband`, and record the SHA-256 (`Get-FileHash -Algorithm SHA256` or `sha256sum`).
-3. Update `ffmpeg.version`, `ffmpeg.build`, `ffmpeg.windows` and `ffmpeg.source` in `UPSTREAM-SOURCES.json`, and the FFmpeg section of `THIRD_PARTY.md`. Leaving a `sha256` empty makes the download fail and print the file's hash (the source tarball only warns).
+3. Update `ffmpeg.version`, `ffmpeg.build`, `ffmpeg.windows` and `ffmpeg.source` in `UPSTREAM-SOURCES.json`, and the FFmpeg section of `THIRD_PARTY.md`. Leaving a `sha256` empty makes the download fail and print the file's hash, which you can then check and pin.
 4. Open a pull request; the Windows job verifies the filter.
 
 ## Local Windows verification

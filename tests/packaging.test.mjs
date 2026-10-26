@@ -29,6 +29,8 @@ test('the bundled FFmpeg is pinned and shipped as an extra resource', () => {
   const pin = upstream.ffmpeg.windows;
   assert.match(pin.url, /^https:\/\/github\.com\/GyanD\/codexffmpeg\/releases\/download\/[\d.]+\/ffmpeg-[\d.]+-essentials_build\.zip$/);
   assert.match(pin.sha256, /^[0-9a-f]{64}$/);
+  assert.match(upstream.ffmpeg.source.url, /^https:\/\/ffmpeg\.org\/releases\/ffmpeg-[\d.]+\.tar\.xz$/);
+  assert.match(upstream.ffmpeg.source.sha256, /^[0-9a-f]{64}$/, 'the FFmpeg source tarball must be pinned');
   assert.equal(upstream.ffmpeg.bundled, true);
   assert.deepEqual(Object.values(pin.files).sort(), ['LICENSE.txt', 'README.txt', 'ffmpeg.exe', 'ffprobe.exe']);
   const resource = pkg.build.extraResources.find(entry => entry.to === 'ffmpeg');

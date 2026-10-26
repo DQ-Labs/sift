@@ -37,7 +37,7 @@
     },
     "source": {
       "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
-      "sha256": "",
+      "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
       "revision": "https://github.com/FFmpeg/FFmpeg/commit/38b88335f9"
     },
     "externalLibraries": "README.txt in the bundle lists every enabled external library and its version (Rubber Band v1.8.1 among them).",

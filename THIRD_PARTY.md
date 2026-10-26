@@ -9,7 +9,7 @@ Sift is licensed under AGPL-3.0-only. The Windows installer and portable EXE bun
 - Licence: GPL version 3. The build enables GPL and version-3 components, among them Rubber Band (librubberband v1.8.1), x264 and x265. The full licence text ships as `resources\ffmpeg\LICENSE.txt`.
 - Shipped files: `ffmpeg.exe`, `ffprobe.exe`, `LICENSE.txt`, and the build's `README.txt`, which lists the configuration and every enabled external library with its version, plus `SOURCE.txt` pointing back here.
 - Source: FFmpeg revision https://github.com/FFmpeg/FFmpeg/commit/38b88335f9 (release 8.1.2). Each Sift release's source archive includes the FFmpeg release tarball https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz . The external libraries' sources are available from their upstream projects at the versions `README.txt` names.
-- Limitation: the builder does not publish the scripts used to produce this binary, so this is not a verified reproducible build. The SHA-256 of the FFmpeg source tarball is recorded in the source archive's `upstream/README.txt`; pinning it in `UPSTREAM-SOURCES.json` is pending (see the TODO in `scripts/source-archive.mjs`).
+- Limitation: the builder does not publish the scripts used to produce this binary, so this is not a verified reproducible build. The FFmpeg source tarball is pinned by SHA-256 (`464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c`) in `UPSTREAM-SOURCES.json`.
 - Sift runs FFmpeg and FFprobe as separate processes; it does not link them.
 - Rubber Band: https://breakfastquay.com/rubberband/ (GPL-2.0-or-later, used here under GPLv3 as part of the FFmpeg build).
 

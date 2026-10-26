@@ -21,9 +21,8 @@ async function fileExists(file) {
 
 // Downloads url to destination and checks it against a pinned SHA-256. An
 // existing file with the right hash is reused. A missing pin fails loudly and
-// prints the hash, so pinning a new version is a deliberate edit, unless
-// allowUnpinned is set; then the hash is returned for the caller to record.
-export async function downloadVerified({ url, sha256, destination, timeoutMs = 600000, allowUnpinned = false }) {
+// prints the hash, so pinning a new version is a deliberate edit.
+export async function downloadVerified({ url, sha256, destination, timeoutMs = 600000 }) {
   if (!/^https:\/\//.test(url)) throw new Error(`Refusing a non-HTTPS download: ${url}`);
   const expected = (sha256 || '').toLowerCase();
   if (expected && !/^[0-9a-f]{64}$/.test(expected)) throw new Error(`Invalid pinned SHA-256 for ${url}.`);
@@ -39,13 +38,11 @@ export async function downloadVerified({ url, sha256, destination, timeoutMs = 6
   await pipeline(Readable.fromWeb(response.body), createWriteStream(partial));
 
   const actual = await sha256File(partial);
-  if (!expected && allowUnpinned) {
-    console.warn(`No SHA-256 is pinned for ${url}; it hashes to ${actual}. Pin it in UPSTREAM-SOURCES.json.`);
-  } else if (!expected) {
+  if (!expected) {
     await rm(partial, { force: true });
     throw new Error(`No SHA-256 is pinned for ${url}. The downloaded file hashes to ${actual}; verify it and pin it in UPSTREAM-SOURCES.json.`);
   }
-  if (expected && actual !== expected) {
+  if (actual !== expected) {
     await rm(partial, { force: true });
     throw new Error(`Checksum mismatch for ${url}: expected ${expected}, got ${actual}.`);
   }
