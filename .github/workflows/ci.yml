@@ -24,7 +24,7 @@ jobs:
     container: node:22-bookworm
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install FFmpeg with Rubber Band
         run: |
           apt-get update -qq
@@ -38,12 +38,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm run release:source
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: sift-source
           path: |
@@ -59,8 +59,8 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -69,7 +69,7 @@ jobs:
         run: node node_modules/electron/install.js
       - run: npm run test:unit
       - name: Cache the pinned FFmpeg download
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/downloads/*.zip
           key: ffmpeg-${{ hashFiles('UPSTREAM-SOURCES.json') }}
@@ -82,7 +82,7 @@ jobs:
       - run: npm run dist:win
       - name: Packaged backend smoke test
         run: npm run test:packaged -- --headless
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: sift-windows-x64
           path: |
