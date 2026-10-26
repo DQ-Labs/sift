@@ -110,7 +110,7 @@ export function drawWave(canvas, peaks, color, progress = -1) {
   ctx.scale(ratio, ratio);
   ctx.clearRect(0, 0, width, height);
   if (!peaks?.length) {
-    ctx.strokeStyle = '#52634d';
+    ctx.strokeStyle = '#353b46';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, height / 2);
@@ -123,7 +123,7 @@ export function drawWave(canvas, peaks, color, progress = -1) {
   for (let i = 0; i < count; i++) {
     const value = peaks[Math.floor(i / count * peaks.length)] / max;
     const bar = Math.max(1, value * (height - 4));
-    ctx.fillStyle = progress >= 0 && i / count > progress ? '#485641' : color;
+    ctx.fillStyle = progress >= 0 && i / count > progress ? '#3a404b' : color;
     ctx.fillRect(i * width / count, (height - bar) / 2, Math.max(1, width / count - 1.5), bar);
   }
 }
@@ -131,7 +131,7 @@ export function drawWave(canvas, peaks, color, progress = -1) {
 export function drawAll() {
   document.querySelectorAll('canvas[data-sample]').forEach(canvas => {
     const sample = sampleById(canvas.dataset.sample);
-    drawWave(canvas, sample?.peaks, colors[sample?.type] || '#7f9177');
+    drawWave(canvas, sample?.peaks, colors[sample?.type] || colors.Other);
   });
   document.querySelectorAll('canvas[data-track-wave]').forEach(canvas => {
     const track = state.tracks[Number(canvas.dataset.trackWave)];
@@ -143,7 +143,7 @@ export function drawAll() {
 function drawPreviewWave() {
   const sample = sampleById(state.selected);
   const progress = preview.duration ? preview.currentTime / preview.duration : -1;
-  drawWave($('#previewWave'), sample?.peaks, '#b8c99d', progress);
+  drawWave($('#previewWave'), sample?.peaks, colors[sample?.type] || colors.Other, progress);
 }
 
 // ---- Prepared cycles ------------------------------------------------------
@@ -293,7 +293,7 @@ export function clearSelection() {
   preview.removeAttribute('src');
   state.selected = null;
   $('#previewName').textContent = 'Select a sample to listen';
-  $('#previewDetail').textContent = 'Click a row · audition in its original pitch and tempo';
+  $('#previewDetail').textContent = 'Click any row to audition it';
   $('#previewTime').textContent = '— / —';
   $('#addToBench').disabled = true;
   $('#sampleDetails').disabled = true;

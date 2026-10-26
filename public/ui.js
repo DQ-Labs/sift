@@ -43,7 +43,7 @@ export function applyIcons(root = document) {
 const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => entities[char]);
 
-export const colors = { Drums: '#c8ad85', Bass: '#a1b39a', Melodic: '#a1b7c0', Texture: '#b1a1bc', Vocal: '#c4a3a0', Other: '#a1aaa0' };
+export const colors = { Drums: '#ff9a4d', Bass: '#4fdc9a', Melodic: '#5aa9ff', Texture: '#b88cff', Vocal: '#ff6f91', Other: '#9aa3b2' };
 
 export const metadataSource = source => source === 'filename-hint' ? 'unverified filename number' : source || 'unknown';
 
