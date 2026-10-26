@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,7 +41,7 @@ export async function testPackagedBackend(executable,root){
     const audio=await fetch(`${base}/audio/${id}`,{headers:{Range:'bytes=0-43'}});assert.equal(audio.status,206);assert.equal(Buffer.from(await audio.arrayBuffer()).toString('ascii',0,4),'RIFF');
     const saved=await fetch(`${base}/api/favorites`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})});assert.equal(saved.status,200);
     await stop(child);child=null;
-    assert.deepEqual(JSON.parse(await readFile(path.join(data,'library.json'),'utf8')).favorites,[id]);
+    assert.ok(existsSync(path.join(data,'library.sqlite')),'Catalogue database was not written');
     child=await launch();assert.deepEqual((await(await fetch(`${base}/api/library`)).json()).favorites,[id]);
     await stop(child);child=null;
     console.log('Packaged backend: shipped runtime, HTTP/UI assets, demo audio, writable catalogue, persistence across restart and clean shutdown passed.');

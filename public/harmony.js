@@ -51,7 +51,22 @@ function playable(sample, settings) {
   return plan.rate >= .25 && plan.rate <= 4 && (!plan.processed || !sample.duration || (sample.duration <= 180 && sample.duration / plan.rate <= 360));
 }
 
+// Variety runs from 0 (safe) to 1 (wild). It sets how far above the best
+// match a candidate may score and how flat the odds are between candidates.
+// 0.5 reproduces the original band of 2 and unit temperature exactly.
+export const defaultVariety = .5;
+
+export function clampVariety(value) {
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : defaultVariety;
+}
+
+export function varietyPool(variety) {
+  const spread = 2 * clampVariety(variety) - 1;
+  return { band: 2 * 6 ** spread, temperature: 3 ** spread };
+}
+
 export function chooseCombination(tracks, samples, settings, index = null, random = Math.random) {
+  const { band, temperature } = varietyPool(settings.variety);
   const retained = (track, i) => track.locked || (index !== null && index !== i);
   const occupied = new Set(tracks.filter(retained).map(t => t.id).filter(Boolean));
   return tracks.map((track, i) => {
@@ -69,8 +84,8 @@ export function chooseCombination(tracks, samples, settings, index = null, rando
       return { ...track };
     }
     // Keep variety within a nearby quality band, excluding severe mismatches.
-    const best = ranked.filter(item => item.cost <= ranked[0].cost + 2);
-    const weights = best.map(item => Math.exp(ranked[0].cost - item.cost));
+    const best = ranked.filter(item => item.cost <= ranked[0].cost + band);
+    const weights = best.map(item => Math.exp((ranked[0].cost - item.cost) / temperature));
     let draw = Math.max(0, Math.min(.999999, random())) * weights.reduce((sum, weight) => sum + weight, 0);
     const selected = best.find((item, n) => (draw -= weights[n]) < 0)?.sample || best.at(-1).sample;
     occupied.add(selected.id);

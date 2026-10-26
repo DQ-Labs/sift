@@ -1,22 +1,57 @@
-import { mkdir, mkdtemp, readFile, writeFile, copyFile } from 'node:fs/promises';
+// Builds dist/Sift-<version>-Source.tar.gz from the committed tree plus the
+// upstream sources the binaries need: the Essentia.js wrapper at its npm
+// gitHead and the FFmpeg release tarball for the bundled FFmpeg build.
 import { spawnSync } from 'node:child_process';
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { downloadVerified } from './download.mjs';
 
-const {version}=JSON.parse(await readFile('package.json','utf8'));
-if(process.env.CI_COMMIT_TAG&&process.env.CI_COMMIT_TAG!==`v${version}`)throw new Error('Release tag must match package.json version.');
-await mkdir('.source-work',{recursive:true});
-const staging=await mkdtemp(path.resolve('.source-work','build-'));
-const working=path.join(staging,`Sift-${version}`);await mkdir(working,{recursive:true});await mkdir('dist',{recursive:true});
-function run(command,args){const r=spawnSync(command,args,{stdio:'inherit',windowsHide:true});if(r.status!==0)throw new Error(`${command} failed.`);}
-const sourceTar=path.join(staging,'tracked-source.tar');
-run('git',['archive','--format=tar',`--output=${sourceTar}`,'HEAD']);
-run('tar',['-xf',sourceTar,'-C',working]);
-const upstream=JSON.parse(await readFile('UPSTREAM-SOURCES.json','utf8'))['essentia.js'];
-const response=await fetch(upstream.source,{signal:AbortSignal.timeout(120000)});
-if(!response.ok)throw new Error(`Essentia.js source download failed (${response.status}).`);
-await mkdir(path.join(working,'upstream'),{recursive:true});
-await writeFile(path.join(working,'upstream',`essentia.js-${upstream.revision}.tar.gz`),Buffer.from(await response.arrayBuffer()));
-await writeFile(path.join(working,'upstream','README.txt'),'Essentia.js wrapper sources match the npm package gitHead. Read UPSTREAM-SOURCES.json for upstream C++ build provenance and build instructions.\n');
-run('tar',['-czf',path.resolve('dist',`Sift-${version}-Source.tar.gz`),'-C',path.dirname(working),path.basename(working)]);
-await copyFile('docs/STUDIO-SETUP.md','dist/STUDIO-SETUP.md');
-console.log('Created source archive and studio setup guide.');
+const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version}`) {
+  throw new Error(`Release tag ${process.env.GITHUB_REF_NAME} must match package.json version v${version}.`);
+}
+
+function run(command, args) {
+  const result = spawnSync(command, args, { stdio: 'inherit', windowsHide: true });
+  if (result.status !== 0) throw new Error(`${command} ${args[0]} failed.`);
+}
+
+async function fetchUnpinned(url, destination) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+  if (!response.ok) throw new Error(`Download failed (${response.status}): ${url}`);
+  await writeFile(destination, Buffer.from(await response.arrayBuffer()));
+}
+
+await mkdir('.source-work', { recursive: true });
+await mkdir('dist', { recursive: true });
+const staging = await mkdtemp(path.resolve('.source-work', 'build-'));
+try {
+  const working = path.join(staging, `Sift-${version}`);
+  const upstreamDirectory = path.join(working, 'upstream');
+  await mkdir(upstreamDirectory, { recursive: true });
+
+  const trackedTar = path.join(staging, 'tracked-source.tar');
+  run('git', ['archive', '--format=tar', `--output=${trackedTar}`, 'HEAD']);
+  run('tar', ['-xf', trackedTar, '-C', working]);
+
+  const upstream = JSON.parse(await readFile('UPSTREAM-SOURCES.json', 'utf8'));
+  const essentia = upstream['essentia.js'];
+  await fetchUnpinned(essentia.source, path.join(upstreamDirectory, `essentia.js-${essentia.revision}.tar.gz`));
+
+  const ffmpeg = upstream.ffmpeg;
+  const ffmpegName = path.basename(new URL(ffmpeg.source.url).pathname);
+  await downloadVerified({ url: ffmpeg.source.url, sha256: ffmpeg.source.sha256, destination: path.join(upstreamDirectory, ffmpegName) });
+
+  await writeFile(path.join(upstreamDirectory, 'README.txt'), [
+    `essentia.js-${essentia.revision}.tar.gz: Essentia.js wrapper sources at the npm package gitHead.`,
+    `${ffmpegName}: FFmpeg ${ffmpeg.version} source for the bundled ${ffmpeg.build} binaries (${ffmpeg.source.revision}), SHA-256 ${ffmpeg.source.sha256}.`,
+    'UPSTREAM-SOURCES.json and THIRD_PARTY.md describe build provenance and its limitations.',
+    '',
+  ].join('\n'));
+
+  run('tar', ['-czf', path.resolve('dist', `Sift-${version}-Source.tar.gz`), '-C', staging, `Sift-${version}`]);
+  await copyFile('docs/STUDIO-SETUP.md', 'dist/STUDIO-SETUP.md');
+  console.log('Created source archive and studio setup guide.');
+} finally {
+  await rm(staging, { recursive: true, force: true });
+}

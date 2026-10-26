@@ -88,7 +88,8 @@ Integration and acceptance, done in a local session on Windows because it needs 
 
 All JSON. Existing endpoints keep their current behaviour.
 
-- `GET /api/library?lite=1` → `{ folders, favorites, sets, workspace, recovery, scan, analysis, counts: { total, real, demo, conflicts, byRoot: { [root]: n } } }`. No `samples` array.
+- `GET /api/library?lite=1` → `{ folders, favorites, sets, workspace, recovery, scan, analysis, counts: { total, real, demo, conflicts, missing, invalid, analyzed, analysisErrors, byRoot: { [root]: n } } }`. No `samples` array.
+- `POST /api/sets` accepts an optional `replaces: <setId>`; when that set existed, it is removed and the response carries `replaced: <setId>`.
 - `GET /api/samples?source=<root|demo|>&view=all|gems&q=&type=&bpm=slow|mid|fast|unknown&conflicts=1&sort=name|bpm|duration&page=0&pageSize=50` → `{ total, page, pageSize, items: [sample] }`. Filter semantics match `filteredSamples()` in today's `public/app.js`.
 - `GET /api/samples/:id` → `sample` (404 if unknown).
 - `POST /api/samples/batch` `{ ids: [...] }` (max 500) → `{ items: [sample] }`. Used to hydrate workbench layers, gems and sets.

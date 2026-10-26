@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Sift doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please don't attach your catalogue (`library.json`), sample files or anything showing private paths.
+  - type: textarea
+    id: about
+    attributes:
+      label: About Sift
+      description: In Sift, open **Help → About**, choose **Copy details** and paste here.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: How do you run Sift?
+      options:
+        - Installed (Setup EXE)
+        - Portable EXE
+        - Development checkout (npm run desktop)
+        - Browser mode (Start Sift.cmd / npm start)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        1. Added a folder with ~5,000 one-shots
+        2. Clicked Find a combination
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from `sift-error.log`, `sift.log` or `desktop.log` (**Help → View logs**). Remove sample paths you don't want to share.
+      render: text
+  - type: input
+    id: daw
+    attributes:
+      label: DAW and audio interface
+      description: If the problem involves playback or stem handoff.
+      placeholder: FL Studio 2025, Focusrite Scarlett 2i2
