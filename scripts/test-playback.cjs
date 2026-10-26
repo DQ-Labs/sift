@@ -15,17 +15,22 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(),'sift-playback-'));
 app.setPath('userData',directory);
 let scan={running:false,count:0},analysis={running:false,paused:false,pending:0,processed:0,total:0,remaining:0,revision:0};
 const publicDir=path.resolve(__dirname,'../public');
+const publicFiles=new Set(fs.readdirSync(publicDir).filter(name=>/\.(html|js|css|svg)$/.test(name)));
+const contentTypes={'.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.html':'text/html'};
 const server=require('node:http').createServer((req,res)=>{
   const json=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
-  if(req.url==='/api/library/status')return json({scan,analysis});
-  if(req.url==='/api/library')return json({samples:[],favorites:[],folders:[],sets:[],workspace:{},scan,analysis});
-  if(req.url==='/api/analysis'){
+  const {pathname}=new URL(req.url,'http://127.0.0.1');
+  if(pathname==='/api/library/status')return json({scan,analysis});
+  // Answers ?lite=1 like a server without the query API: with every sample.
+  if(pathname==='/api/library')return json({samples:[],favorites:[],folders:[],sets:[],workspace:{},scan,analysis});
+  if(pathname==='/api/capabilities')return json({handoff:1,version:'0.0.0-playback',desktopAvailable:false});
+  if(pathname==='/api/analysis'){
     let input='';req.on('data',chunk=>input+=chunk);req.on('end',()=>{analysis.paused=JSON.parse(input).action==='pause';json(analysis);});return;
   }
-  if(req.url==='/api/workspace')return json({});
-  const filename=req.url==='/'?'index.html':req.url.slice(1);
-  if(!['index.html','app.js','workspace.js','timing.js','harmony.js','export-audio.js','library-activity.js','styles.css','favicon.svg'].includes(filename)){res.writeHead(404);res.end();return;}
-  res.setHeader('Content-Type',filename.endsWith('.js')?'text/javascript':filename.endsWith('.css')?'text/css':filename.endsWith('.svg')?'image/svg+xml':'text/html');
+  if(pathname==='/api/workspace')return json({});
+  const filename=pathname==='/'?'index.html':pathname.slice(1);
+  if(!publicFiles.has(filename)){res.writeHead(404);res.end();return;}
+  res.setHeader('Content-Type',contentTypes[path.extname(filename)]);
   res.end(fs.readFileSync(path.join(publicDir,filename)));
 });
 app.whenReady().then(async()=>{
@@ -40,6 +45,8 @@ app.whenReady().then(async()=>{
     await waitFor("document.querySelectorAll('#tracks [data-track]').length===4");
     const inspect=()=>run(`({visible:!document.querySelector('#libraryActivity').hidden,title:document.querySelector('#libraryActivityTitle').textContent,detail:document.querySelector('#libraryActivityDetail').textContent,action:document.querySelector('#libraryActivityAction').textContent,value:document.querySelector('#libraryActivityProgress').value,max:document.querySelector('#libraryActivityProgress').max,indeterminate:!document.querySelector('#libraryActivityProgress').hasAttribute('value'),status:document.querySelector('#scanState').textContent,collectionHidden:document.querySelector('#collectionBody').hidden})`);
     assert.equal((await inspect()).visible,false);
+    await waitFor("document.querySelector('#versionLabel').textContent==='SIFT / 0.0.0-playback'");
+    assert.equal(await run("document.querySelector('#shuffle').textContent.trim()"),'New batch');
     scan={running:true,count:12000,current:'My sample pack/Drums'};
     await waitFor("document.querySelector('#libraryActivityTitle').textContent.includes('Indexing')");
     let ui=await inspect();assert.equal(ui.visible,true);assert.equal(ui.indeterminate,true);assert.equal(ui.collectionHidden,true);

@@ -49,7 +49,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   assert.equal(saved.sets[0].key,'A# min');assert.equal(saved.workspace.key,'C maj');
   assert.deepEqual(saved.workspace.tracks[0].timing,{offset:.125,repeat:'bar'});assert.deepEqual(saved.sets[0].tracks[0].timing,{offset:null,repeat:'auto'});
   response=await get('/');assert.equal(response.status,200);assert.match(await response.text(),/id="workspace"/);
-  response=await get('/app.js');assert.equal(response.status,200);assert.ok((await response.text()).length>10000);
+  response=await get('/app.js');assert.equal(response.status,200);assert.match(await response.text(),/from '\.\/workbench\.js'/);
   response=await post('/api/metadata',{id:imported.id,bpm:55,key:null});assert.equal(response.status,200);let updated=await response.json();assert.equal(updated.bpmSource,'manual');assert.equal(updated.bpm,55);
   response=await post('/api/metadata',{id:imported.id,bpm:999,key:null});assert.equal(response.status,400);
   response=await post('/api/metadata',{id:imported.id,key:'C maj'});assert.equal(response.status,200);updated=await response.json();assert.equal(updated.bpm,55);assert.equal(updated.key,'C maj');
