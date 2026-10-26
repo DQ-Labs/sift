@@ -40,11 +40,13 @@ try {
 
   const ffmpeg = upstream.ffmpeg;
   const ffmpegName = path.basename(new URL(ffmpeg.source.url).pathname);
-  await downloadVerified({ url: ffmpeg.source.url, sha256: ffmpeg.source.sha256, destination: path.join(upstreamDirectory, ffmpegName) });
+  // TODO(pin): copy the hash this prints from the first CI run into
+  // UPSTREAM-SOURCES.json; allowUnpinned then stops applying.
+  const ffmpegSource = await downloadVerified({ url: ffmpeg.source.url, sha256: ffmpeg.source.sha256, destination: path.join(upstreamDirectory, ffmpegName), allowUnpinned: true });
 
   await writeFile(path.join(upstreamDirectory, 'README.txt'), [
     `essentia.js-${essentia.revision}.tar.gz: Essentia.js wrapper sources at the npm package gitHead.`,
-    `${ffmpegName}: FFmpeg ${ffmpeg.version} source for the bundled ${ffmpeg.build} binaries (${ffmpeg.source.revision}).`,
+    `${ffmpegName}: FFmpeg ${ffmpeg.version} source for the bundled ${ffmpeg.build} binaries (${ffmpeg.source.revision}), SHA-256 ${ffmpegSource.sha256}.`,
     'UPSTREAM-SOURCES.json and THIRD_PARTY.md describe build provenance and its limitations.',
     '',
   ].join('\n'));
