@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # release.yml runs the same jobs before publishing a tag.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux:
+    name: Linux tests
+    runs-on: ubuntu-24.04
+    # Debian's FFmpeg includes Rubber Band; this matches the image the suite
+    # was validated on.
+    container: node:22-bookworm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg with Rubber Band
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ffmpeg
+      - run: npm ci --ignore-scripts
+      - run: npm run check:audio-tools
+      - run: npm test
+
+  source:
+    name: Source archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run release:source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sift-source
+          path: |
+            dist/*-Source.tar.gz
+            dist/STUDIO-SETUP.md
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows build
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the Electron runtime
+        run: node node_modules/electron/install.js
+      - run: npm run test:unit
+      - name: Cache the pinned FFmpeg download
+        uses: actions/cache@v4
+        with:
+          path: build/downloads/*.zip
+          key: ffmpeg-${{ hashFiles('UPSTREAM-SOURCES.json') }}
+      - run: npm run fetch:ffmpeg
+      - name: Check the bundled FFmpeg
+        run: npm run check:audio-tools
+        env:
+          SIFT_FFMPEG: build/ffmpeg/ffmpeg.exe
+          SIFT_FFPROBE: build/ffmpeg/ffprobe.exe
+      - run: npm run dist:win
+      - name: Packaged backend smoke test
+        run: npm run test:packaged -- --headless
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sift-windows-x64
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+          retention-days: 14
