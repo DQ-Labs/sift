@@ -68,7 +68,7 @@ test('variety narrows or widens the weighted pool while 0.5 keeps the original b
   assert.ok(varietyPool(0).band < 1 && varietyPool(1).band > 10);
   const settings={tempo:120,sync:true,key:'A min'};
   // Costs: exact 0, +3 BPM ~0.4, 132 BPM ~1.4, 160 BPM ~4.2, 240 BPM 10.
-  const pool=[120,123,132,160,240].map((bpm,n)=>({id:`b${n}`,type:'Bass',bpm,key:'A min',size:1000,duration:8}));
+  const pool=[120,123,132,160,240].map((bpm,n)=>({id:`b${n}`,type:'Bass',bpm,key:'A min',size:1000,duration:7}));
   const picks=variety=>{
     const seen=new Set();
     for(let n=0;n<200;n++)seen.add(chooseCombination([{type:'Bass'}],pool,{...settings,variety},null,()=>n/200)[0].id);

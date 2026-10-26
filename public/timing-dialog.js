@@ -1,6 +1,6 @@
 // Per-layer timing: start offset and repeat length, with a by-ear preview.
 import { api } from './api.js';
-import { audibleStart, defaultTiming } from './timing.js';
+import { automaticStart, defaultTiming } from './timing.js';
 import { $, toast } from './ui.js';
 import { state, sampleById, currentSettings, snapshot } from './state.js';
 import { audioContext, cycleForTrack, decode, preview, stopMix, updatePreviewControls } from './player.js';
@@ -35,11 +35,12 @@ export function openTiming(index) {
   stopTimingPreview();
   timingIndex = index;
   timingSampleId = sample.id;
-  const timing = track.timing || defaultTiming();
+  const timing = { ...defaultTiming(), ...track.timing };
   $('#timingTitle').textContent = `Layer ${index + 1} timing`;
   $('#timingTitle').title = sample.filename;
   $('#timingOffset').value = timing.offset ?? '';
   $('#timingRepeat').value = timing.repeat;
+  $('#timingStartMode').value = timing.start;
   $('#timingError').textContent = '';
   $('#timingDialog').showModal();
 }
@@ -63,7 +64,8 @@ async function togglePreview() {
     const ctx = audioContext();
     await ctx.resume();
     const buffer = await decode(sample);
-    offset ??= audibleStart(buffer) / buffer.sampleRate;
+    // The original file plays here, so source and buffer seconds agree.
+    offset ??= automaticStart(buffer, sample, { start: $('#timingStartMode').value }).frame / buffer.sampleRate;
     if (token !== previewToken || !$('#timingDialog').open) return;
     if (offset >= buffer.duration) throw new Error('Start offset is past the end of this sample.');
     const source = ctx.createBufferSource();
@@ -94,7 +96,7 @@ async function applyTiming(event) {
   try {
     const track = state.tracks[index];
     if (track?.id !== id) throw new Error('This layer changed. Reopen its timing controls.');
-    const timing = { offset: enteredOffset(), repeat: $('#timingRepeat').value };
+    const timing = { offset: enteredOffset(), repeat: $('#timingRepeat').value, start: $('#timingStartMode').value };
     // Validate by preparing the cycle before saving anything.
     await cycleForTrack({ ...track, timing }, currentSettings());
     if (!$('#timingDialog').open || state.tracks[index]?.id !== id) return;
@@ -120,9 +122,11 @@ export function initTimingDialog() {
     stopTimingPreview();
     $('#timingOffset').value = '';
     $('#timingRepeat').value = 'auto';
+    $('#timingStartMode').value = defaultTiming().start;
     $('#timingError').textContent = '';
   };
   $('#timingOffset').oninput = stopTimingPreview;
+  $('#timingStartMode').onchange = stopTimingPreview;
   $('#timingPreview').onclick = togglePreview;
   $('#timingForm').onsubmit = applyTiming;
 }

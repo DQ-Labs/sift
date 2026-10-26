@@ -45,6 +45,40 @@ export function combinationCost(sample, { tempo, key = null }) {
   return cost;
 }
 
+// ---- Loops -------------------------------------------------------------------
+
+export const loopBarCounts = [1, 2, 4, 8];
+
+// How close a length must be to a whole number of beats to count as one:
+// 1.5% of the length, at least 20 ms and at most 80 ms. Shared with the
+// automatic repeat in planCycle() (public/timing.js).
+export const loopTolerance = seconds => Math.min(.08, Math.max(.02, seconds * .015));
+
+// The number of 4/4 bars (1, 2, 4 or 8) a sample's duration fills at its
+// tempo, or null when it is not a whole-bar loop or its tempo is a guess.
+export function loopBars(sample) {
+  const { bpm, duration } = sample || {};
+  if (!(bpm > 0) || !(duration > 0) || sample.bpmSource === 'filename-hint') return null;
+  if (sample.conflicts?.bpm && !sample.conflicts.bpm.resolved) return null;
+  const bar = 4 * 60 / bpm;
+  return loopBarCounts.find(bars => Math.abs(duration - bars * bar) <= loopTolerance(bars * bar)) ?? null;
+}
+
+// Loops line up bar for bar with the other layers, so rhythmic and harmonic
+// roles prefer them. The bonus only moves loops ahead of non-loops; when no
+// candidate is a loop, costs and odds are exactly as before.
+const loopRoles = new Set(['Drums', 'Bass', 'Melodic']);
+export const loopBonus = 2;
+
+function isLoop(sample) {
+  return (sample.loopBars !== undefined ? sample.loopBars : loopBars(sample)) !== null;
+}
+
+export function roleCost(sample, role, settings) {
+  const cost = combinationCost(sample, settings);
+  return loopRoles.has(role) && isLoop(sample) ? cost - loopBonus : cost;
+}
+
 function playable(sample, settings) {
   if (sample.missing || sample.size > 100 * 1024 * 1024) return false;
   const plan = renderPlan(sample, settings);
@@ -75,7 +109,7 @@ export function chooseCombination(tracks, samples, settings, index = null, rando
     const typed = available.filter(s => s.type === track.type);
     const pool = typed.length ? typed : available;
     const alternatives = pool.filter(s => s.id !== track.id);
-    const ranked = (alternatives.length ? alternatives : pool).map(sample => ({ sample, cost: combinationCost(sample, settings) })).sort((a, b) => a.cost - b.cost);
+    const ranked = (alternatives.length ? alternatives : pool).map(sample => ({ sample, cost: roleCost(sample, track.type, settings) })).sort((a, b) => a.cost - b.cost);
     if (!ranked.length) {
       // A previous layer may already have claimed this sample during a full
       // reroll. Leave this slot empty rather than silently doubling that audio.

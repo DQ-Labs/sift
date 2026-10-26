@@ -87,9 +87,13 @@ export async function decode(sample, render = null) {
   }
 }
 
-async function playbackBuffer(sample, settings) {
+// priority is 'now' for a layer someone is waiting to hear and 'prefetch'
+// for background renders; the server starts 'now' renders first.
+const stretchRequest = (sample, settings, priority) => ({ id: sample.id, ...settings, priority });
+
+async function playbackBuffer(sample, settings, priority = 'now') {
   if (!renderPlan(sample, settings).processed) return decode(sample);
-  const render = await api('stretch', { id: sample.id, ...settings });
+  const render = await api('stretch', stretchRequest(sample, settings, priority));
   return decode(sample, render);
 }
 
@@ -150,14 +154,17 @@ function drawPreviewWave() {
 const prepared = new Map();
 
 export function trackSignature(track, sample, settings) {
-  return JSON.stringify([track.id, sample.mtime, sample.bpm, sample.key, sample.type, sample.bpmSource, sample.conflicts?.bpm, track.timing || defaultTiming(), settings]);
+  const timing = { ...defaultTiming(), ...track.timing };
+  // Only the first beats shape the fitted grid (see beatGrid in timing.js).
+  const beats = sample.beats?.slice(0, 18) || null;
+  return JSON.stringify([track.id, sample.mtime, sample.bpm, sample.key, sample.type, sample.bpmSource, sample.conflicts?.bpm, beats, timing, settings]);
 }
 
-export async function cycleForTrack(track, settings) {
+export async function cycleForTrack(track, settings, { priority = 'now' } = {}) {
   const current = sampleById(track.id);
   if (!current) return null;
   const sample = { ...current };
-  const buffer = await playbackBuffer(sample, settings);
+  const buffer = await playbackBuffer(sample, settings, priority);
   return { ...makeCycle(audioContext(), buffer, sample, track, settings), sample };
 }
 
@@ -173,19 +180,29 @@ function rememberPrepared(entry) {
   while (prepared.size > preparedLimit) prepared.delete(prepared.keys().next().value);
 }
 
+// Asks the server to move a background render to the front of its queue.
+// The original request still delivers the result; this one only re-ranks it.
+function promote(entry, sample, settings) {
+  entry.priority = 'now';
+  if (entry.ready || !renderPlan(sample, settings).processed) return;
+  api('stretch', stretchRequest(sample, settings, 'now')).catch(() => {});
+}
+
 // Starts (or reuses) rendering a layer. Returns the cache entry, or null when
-// the layer has no sample.
-export function prepareCycle(track, settings = currentSettings()) {
+// the layer has no sample. A 'now' request for a layer still rendering as a
+// prefetch promotes that render.
+export function prepareCycle(track, settings = currentSettings(), { priority = 'now' } = {}) {
   const sample = sampleById(track?.id);
   if (!sample) return null;
   const signature = trackSignature(track, sample, settings);
   const existing = prepared.get(signature);
   if (existing && !existing.error) {
+    if (priority === 'now' && existing.priority === 'prefetch') promote(existing, sample, settings);
     rememberPrepared(existing);
     return existing;
   }
-  const entry = { signature, peaks: null, ready: false };
-  entry.promise = cycleForTrack(structuredClone(track), settings).then(result => {
+  const entry = { signature, peaks: null, ready: false, priority };
+  entry.promise = cycleForTrack(structuredClone(track), settings, { priority }).then(result => {
     Object.assign(entry, result, { peaks: waveform(result.buffer), ready: true });
     return result;
   }).catch(error => {
@@ -196,14 +213,20 @@ export function prepareCycle(track, settings = currentSettings()) {
   return entry;
 }
 
+const startDescriptions = {
+  beat: 'Snapped to the first beat of the analysed beat grid',
+  sound: 'First sound selected by skipping leading silence',
+  manual: 'Exact manual start'
+};
+
 function timingTitle(entry) {
   if (entry.error) return entry.error;
   const plan = entry.plan;
   return [
     plan?.offset ? `Starts at ${plan.offset.toFixed(2)} source seconds` : 'Starts at file beginning',
-    plan?.automatic ? 'First sound selected by skipping leading silence; musical downbeat not detected' : 'Exact manual start',
+    startDescriptions[plan?.start] || startDescriptions.sound,
     ...(plan?.warnings || []),
-    'Use Timing to place the first downbeat by ear.'
+    'Beats are not downbeats: use Timing to place bar 1 by ear.'
   ].join('. ');
 }
 

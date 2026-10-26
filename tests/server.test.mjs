@@ -157,8 +157,8 @@ test('local server indexes, streams and persists without exposing arbitrary file
   assert.equal((await post('/api/sets', { name: 'Bad', replaces: 7, tracks: [] })).status, 400);
   saved = await getJson('/api/library?lite=1');
   assert.deepEqual(saved.sets.filter(set => set.name === 'First find').map(set => set.tempo), [100]);
-  assert.deepEqual(saved.workspace.tracks[0].timing, { offset: 0.125, repeat: 'bar' });
-  assert.deepEqual(saved.sets[0].tracks[0].timing, { offset: null, repeat: 'auto' });
+  assert.deepEqual(saved.workspace.tracks[0].timing, { offset: 0.125, repeat: 'bar', start: 'beat' });
+  assert.deepEqual(saved.sets[0].tracks[0].timing, { offset: null, repeat: 'auto', start: 'beat' });
 
   // The front end, including any module added to public/ later.
   response = await get('/');
@@ -491,5 +491,56 @@ test('an existing library.json is migrated on first start and kept as library.pr
   lite = await server.getJson('/api/library?lite=1');
   assert.deepEqual(lite.favorites, ['legacy-id']);
   assert.equal(lite.counts.total, 13);
+  await server.stop();
+});
+
+test('sound routes: render priority, CAF audition, reanalysis by source and HEAD diagnostics', async t => {
+  const data = await mkdtemp(path.join(os.tmpdir(), 'sift-sound-'));
+  const server = await startServer(t, { port: 44322, dataDir: path.join(data, 'data') });
+  const { base, get, getJson, post } = server;
+  const samples = path.join(data, 'Pack');
+  await mkdir(samples);
+  const wav = path.join(data, 'source.wav');
+  await writeFile(wav, makeDemo('Melodic', 0, 100).buffer);
+  const { execFile } = await import('node:child_process');
+  const ffmpeg = process.env.SIFT_FFMPEG || 'ffmpeg';
+  await new Promise((resolve, reject) => execFile(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', wav, '-c:a', 'pcm_s16be', '-f', 'caf', path.join(samples, 'keys_100bpm_Amin.caf')], error => (error ? reject(error) : resolve())));
+  assert.equal((await post('/api/scan', { path: samples })).status, 202);
+  await waitForScan(server);
+  const { items } = await getJson(`/api/samples?source=${encodeURIComponent(samples)}`);
+  assert.equal(items.length, 1);
+  const caf = items[0];
+
+  // Chromium cannot decode CAF, so /audio serves a WAV copy, with ranges.
+  let response = await get(`/audio/${caf.id}`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'audio/wav');
+  const copy = Buffer.from(await response.arrayBuffer());
+  assert.equal(copy.toString('ascii', 0, 4), 'RIFF');
+  response = await fetch(`${base}/audio/${caf.id}`, { headers: { Range: 'bytes=0-11' } });
+  assert.equal(response.status, 206);
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString('ascii', 8, 12), 'WAVE');
+  assert.equal((await fetch(`${base}/audio/${caf.id}`, { method: 'HEAD' })).status, 200);
+
+  // Renders take a priority; prefetches and audible requests share a file.
+  const [background, audible] = await Promise.all([
+    post('/api/stretch', { id: caf.id, tempo: 120, priority: 'prefetch' }).then(r => r.json()),
+    post('/api/stretch', { id: caf.id, tempo: 120, priority: 'now' }).then(r => r.json())
+  ]);
+  assert.match(background.url, /^\/rendered\/[a-f0-9]{64}\.wav$/);
+  assert.equal(audible.url, background.url);
+  assert.equal((await post('/api/stretch', { id: caf.id, tempo: 120, priority: 'whenever' })).status, 400);
+
+  // Reanalysis by source.
+  response = await post('/api/analysis', { action: 'reanalyze', source: samples });
+  assert.equal(response.status, 200);
+  assert.ok((await response.json()).total >= 1);
+  assert.equal((await post('/api/analysis', { action: 'reanalyze', source: samples, ids: [caf.id] })).status, 400);
+  assert.equal((await post('/api/analysis', { action: 'reanalyze', source: 5 })).status, 400);
+  await post('/api/analysis', { action: 'pause' });
+
+  response = await fetch(`${base}/api/diagnostics`, { method: 'HEAD' });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/zip');
   await server.stop();
 });

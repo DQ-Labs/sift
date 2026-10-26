@@ -4,7 +4,10 @@ import { mkdtemp,writeFile,readFile,stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { computeAnalysis, effectiveMetadata, AnalysisQueue } from '../lib/analysis.mjs';
-import { StretchCache, analysisAudio } from '../lib/media.mjs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { StretchCache, analysisAudio, rubberbandOptions, rubberbandFilter, needsBrowserCopy, ffmpeg } from '../lib/media.mjs';
+import { trackTypes } from '../public/workspace.js';
 import { parseWavHeader } from '../lib/audio.mjs';
 import { wavFromChannels,chordFixture,clickFixture } from './fixtures.mjs';
 
@@ -99,4 +102,107 @@ test('analysis save failures pause work and clear only after a successful retry,
   failure=null;await queue.save();
   assert.equal(saved,1);assert.equal(queue.status().saveError,null);assert.equal(queue.dirty,0);
   queue.resume();assert.equal(queue.status().paused,false);assert.equal(queue.status().pending,0);queue.close();
+});
+
+// Zero-crossing frequency of one channel of a float WAV, over seconds 1–3.
+function channelHz(bytes, header, channel) {
+  const start = header.rate;
+  const end = header.rate * 3;
+  const at = frame => bytes.readFloatLE(header.dataOffset + (frame * header.channels + channel) * 4);
+  let crossings = 0;
+  let previous = at(start);
+  for (let frame = start + 1; frame < end; frame++) {
+    const value = at(frame);
+    if (previous <= 0 && value > 0) crossings++;
+    previous = value;
+  }
+  return crossings / ((end - start) / header.rate);
+}
+
+test('each layer type gets its own Rubber Band options, in the cache key too', () => {
+  const options = Object.fromEntries(trackTypes.map(type => [type, rubberbandOptions(type)]));
+  assert.match(options.Drums, /transients=crisp/);
+  assert.match(options.Drums, /detector=percussive/);
+  assert.match(options.Drums, /window=short/);
+  assert.match(options.Vocal, /formant=preserved/);
+  for (const type of ['Melodic', 'Texture']) assert.match(options[type], /transients=smooth/);
+  assert.match(options.Texture, /window=long/);
+  // Only drums process channels together; with smooth or mixed transients,
+  // channels=together lets one stereo channel collapse into or leak into the other.
+  assert.match(options.Drums, /channels=together/);
+  for (const type of trackTypes.filter(type => type !== 'Drums')) assert.match(options[type], /channels=apart/);
+  assert.equal(rubberbandOptions('Unknown'), options.Other);
+  assert.equal(new Set(Object.values(options)).size, trackTypes.length, 'every type renders differently');
+  assert.equal(rubberbandFilter({ rate: 1.5, semitones: 2, type: 'Drums' }), `rubberband=tempo=1.50000000:pitch=1.1224620483:${options.Drums}`);
+});
+
+test('every layer type keeps output duration and both stereo pitches exact', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'sift-types-'));
+  const file = path.join(directory, 'stereo.wav');
+  const rate = 44100;
+  const seconds = 6;
+  await writeFile(file, wavFromChannels([440, 660].map(f => Float32Array.from({ length: rate * seconds }, (_, i) => .3 * Math.sin(2 * Math.PI * f * i / rate)))));
+  const cache = new StretchCache(path.join(directory, 'cache'));
+  const outputs = new Map();
+  for (const type of trackTypes) {
+    const sample = { path: file, bpm: 120, key: 'A min', type };
+    const output = await cache.render(sample, 180, { key: 'B min' });
+    const bytes = await readFile(output);
+    const header = parseWavHeader(bytes);
+    // 1.5× tempo: 6 s becomes 4 s. A frame-level error would be far smaller
+    // than 40 ms; a wrong tempo would be off by seconds.
+    assert.ok(Math.abs(header.duration - seconds / 1.5) < .04, `${type}: duration ${header.duration}`);
+    assert.equal(header.channels, 2);
+    // Drums are never transposed; everything else moves up two semitones.
+    const semitones = type === 'Drums' ? 0 : 2;
+    for (let channel = 0; channel < 2; channel++) {
+      const expected = [440, 660][channel] * 2 ** (semitones / 12);
+      const cents = 1200 * Math.log2(channelHz(bytes, header, channel) / expected);
+      // Builds differ by a few cents; a wrong shift or a swapped channel is 100+.
+      assert.ok(Math.abs(cents) < 10, `${type} channel ${channel}: ${cents.toFixed(1)} cents from ${expected.toFixed(1)} Hz`);
+    }
+    outputs.set(type, output);
+    assert.equal(await cache.render(sample, 180, { key: 'B min', priority: 'prefetch' }), output, `${type} render is cached`);
+  }
+  assert.equal(new Set(outputs.values()).size, trackTypes.length, 'each type has its own cache entry');
+  assert.notDeepEqual(await readFile(outputs.get('Drums')), await readFile(outputs.get('Texture')));
+});
+
+test('a prefetch and an audible request for the same render share one file', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'sift-share-'));
+  const file = path.join(directory, 'tone.wav');
+  await writeFile(file, wavFromChannels([Float32Array.from({ length: 44100 * 4 }, (_, i) => .3 * Math.sin(2 * Math.PI * 440 * i / 44100))]));
+  const cache = new StretchCache(path.join(directory, 'cache'));
+  const sample = { path: file, bpm: 100, type: 'Bass' };
+  const [background, audible] = await Promise.all([cache.render(sample, 120, { priority: 'prefetch' }), cache.render(sample, 120)]);
+  assert.equal(background, audible);
+  await assert.rejects(() => cache.render(sample, 120, { priority: 'later' }), /priority/);
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(() => cache.render(sample, 130, { signal: controller.signal }), /cancelled/);
+});
+
+test('CAF files are auditioned through a cached WAV copy at their own rate and channels', async () => {
+  assert.equal(needsBrowserCopy('/x/Loop.CAF'), true);
+  assert.equal(needsBrowserCopy('/x/Loop.aiff'), true);
+  assert.equal(needsBrowserCopy('/x/Loop.wav'), false);
+  assert.equal(needsBrowserCopy('/x/Loop.flac'), false);
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'sift-caf-'));
+  const wav = path.join(directory, 'source.wav');
+  const caf = path.join(directory, 'Loop.caf');
+  const rate = 48000;
+  await writeFile(wav, wavFromChannels([440, 660].map(f => Float32Array.from({ length: rate * 3 }, (_, i) => .3 * Math.sin(2 * Math.PI * f * i / rate))), rate));
+  await promisify(execFile)(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', wav, '-c:a', 'pcm_s16be', '-f', 'caf', caf]);
+  const cache = new StretchCache(path.join(directory, 'cache'));
+  const copy = await cache.browserCopy(caf);
+  assert.match(path.basename(copy), /^[a-f0-9]{64}\.wav$/);
+  const bytes = await readFile(copy);
+  const header = parseWavHeader(bytes);
+  assert.equal(header.rate, rate);
+  assert.equal(header.channels, 2);
+  assert.ok(Math.abs(header.duration - 3) < .01, `duration ${header.duration}`);
+  assert.ok(Math.abs(channelHz(bytes, header, 1) - 660) < 2);
+  const before = (await stat(copy)).birthtimeMs;
+  assert.equal(await cache.browserCopy(caf), copy);
+  assert.equal((await stat(copy)).birthtimeMs, before, 'the copy is reused');
 });
