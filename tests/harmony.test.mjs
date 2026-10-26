@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseKey, pitchPlan, renderPlan, chooseCombination } from '../public/harmony.js';
+import { parseKey, pitchPlan, renderPlan, chooseCombination, varietyPool, clampVariety } from '../public/harmony.js';
 import { normalizeWorkspace } from '../public/workspace.js';
 
 test('key matching uses the shortest scale transposition and preserves major/minor', () => {
@@ -59,4 +59,35 @@ test('session keys persist canonically, old sets keep original pitch, and new wo
   assert.equal(normalizeWorkspace({tracks:[],key:'Bb min'},{strict:true}).key,'A# min');
   for(const key of ['',false,{},12,'C','H min'])assert.throws(()=>normalizeWorkspace({tracks:[],key},{strict:true}),{status:400});
   assert.equal(normalizeWorkspace({tracks:[],key:'invalid'}).key,null);
+});
+
+test('variety narrows or widens the weighted pool while 0.5 keeps the original behaviour', () => {
+  assert.deepEqual(varietyPool(.5), { band: 2, temperature: 1 });
+  assert.deepEqual(varietyPool(undefined), varietyPool(.5));
+  assert.equal(clampVariety(-1), 0);assert.equal(clampVariety(Number.NaN), .5);
+  assert.ok(varietyPool(0).band < 1 && varietyPool(1).band > 10);
+  const settings={tempo:120,sync:true,key:'A min'};
+  // Costs: exact 0, +3 BPM ~0.4, 132 BPM ~1.4, 160 BPM ~4.2, 240 BPM 10.
+  const pool=[120,123,132,160,240].map((bpm,n)=>({id:`b${n}`,type:'Bass',bpm,key:'A min',size:1000,duration:8}));
+  const picks=variety=>{
+    const seen=new Set();
+    for(let n=0;n<200;n++)seen.add(chooseCombination([{type:'Bass'}],pool,{...settings,variety},null,()=>n/200)[0].id);
+    return [...seen].sort();
+  };
+  assert.deepEqual(picks(0),['b0']);
+  assert.deepEqual(picks(.5),['b0','b1','b2']);
+  assert.deepEqual(picks(1),['b0','b1','b2','b3','b4']);
+  // Old call shape, without variety, is unchanged for the server.
+  for(const random of [()=>0,()=>.5,()=>.9999]){
+    assert.deepEqual(chooseCombination([{type:'Bass'}],pool,settings,null,random),chooseCombination([{type:'Bass'}],pool,{...settings,variety:.5},null,random));
+  }
+});
+
+test('variety is stored in workspaces, validated strictly and defaults for older sets', () => {
+  assert.equal(normalizeWorkspace(null).variety,.5);
+  assert.equal(normalizeWorkspace({tracks:[]}).variety,.5);
+  assert.equal(normalizeWorkspace({tracks:[],variety:0},{strict:true}).variety,0);
+  assert.equal(normalizeWorkspace({tracks:[],variety:1},{strict:true}).variety,1);
+  for(const variety of [-.1,1.1,'wild',null,Number.NaN])assert.throws(()=>normalizeWorkspace({tracks:[],variety},{strict:true}),{status:400});
+  assert.equal(normalizeWorkspace({tracks:[],variety:3}).variety,1);
 });
