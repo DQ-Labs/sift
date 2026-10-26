@@ -73,9 +73,9 @@ test('fractional tempos use exact whole-cycle frames without subdivision drift, 
 });
 
 test('timing fields are validated, legacy sets receive safe defaults, and replacements reset source-specific offsets',()=>{
-  assert.deepEqual(normalizeWorkspace({tracks:[{id:'old'}]}).tracks[0].timing,{offset:null,repeat:'auto'});
-  const input={tracks:[{id:'sample',timing:{offset:.25,repeat:'bar'}}]};assert.deepEqual(normalizeWorkspace(input,{strict:true}).tracks[0].timing,input.tracks[0].timing);
-  for(const timing of [null,[],{offset:-1},{offset:'1'},{offset:3601},{repeat:'forever'}])assert.throws(()=>normalizeWorkspace({tracks:[{timing}]},{strict:true}),{status:400});
+  assert.deepEqual(normalizeWorkspace({tracks:[{id:'old'}]}).tracks[0].timing,{offset:null,repeat:'auto',start:'beat'});
+  const input={tracks:[{id:'sample',timing:{offset:.25,repeat:'bar',start:'sound'}}]};assert.deepEqual(normalizeWorkspace(input,{strict:true}).tracks[0].timing,input.tracks[0].timing);
+  for(const timing of [null,[],{offset:-1},{offset:'1'},{offset:3601},{repeat:'forever'},{start:'downbeat'}])assert.throws(()=>normalizeWorkspace({tracks:[{timing}]},{strict:true}),{status:400});
   assert.throws(()=>plan(1,track(1)),/past the end/);
   assert.throws(()=>plan(1,track(-1)),/valid start offset/);
   const layers=[{id:'old',type:'Bass',timing:{offset:2,repeat:'bar'}},{id:'keep',type:'Drums',locked:true,timing:{offset:1,repeat:'once'}}];

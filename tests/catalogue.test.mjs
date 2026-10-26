@@ -30,7 +30,7 @@ function legacyLibrary(dir) {
 function assertLibraryKept(catalogue) {
   assert.deepEqual(catalogue.favorites, ['sample']);
   assert.deepEqual(catalogue.sets.map(set => set.id), ['newest', 'older']);
-  assert.deepEqual(catalogue.sets[0].tracks[0].timing, { offset: 0.25, repeat: '2bars' });
+  assert.deepEqual(catalogue.sets[0].tracks[0].timing, { offset: 0.25, repeat: '2bars', start: 'beat' });
   assert.equal(catalogue.sets[0].key, 'D min');
   assert.equal(catalogue.workspace.key, 'C maj');
   assert.equal(catalogue.workspace.sync, true);
@@ -297,5 +297,51 @@ test('counts, references and combination candidates come from the catalogue', as
   assert.ok(catalogue.referencedIds().has('sample-31'));
   assert.ok(catalogue.referencedIds().has('sample-0'));
   assert.deepEqual(catalogue.setFavorites(['sample-1', 'unknown', 'sample-1', 'sample-2']), ['sample-1', 'sample-2']);
+  catalogue.close();
+});
+
+test('beat grids round-trip in their own column and loops are marked for combinations', async () => {
+  const { catalogue } = await openCatalogue(await temporary());
+  const beats = [0.5, 1.0001, 1.5, 2.25];
+  const base = { path: '/x/loop.wav', filename: 'loop.wav', name: 'loop', type: 'Drums', bpmSource: 'analysis', size: 1, mtime: 1 };
+  catalogue.putMany([
+    { ...base, id: 'loop', bpm: 120, duration: 8.01, beats },
+    { ...base, id: 'phrase', path: '/x/phrase.wav', bpm: 120, duration: 7 },
+    { ...base, id: 'guess', path: '/x/guess.wav', bpm: 120, duration: 8, bpmSource: 'filename-hint' }
+  ]);
+  assert.deepEqual(catalogue.get('loop').beats, beats);
+  assert.equal(catalogue.get('phrase').beats, undefined);
+  const row = catalogue.db.prepare("SELECT r.data FROM samples s JOIN sample_records r ON r.seq = s.seq WHERE s.id = 'loop'").get();
+  assert.equal(JSON.parse(row.data).beats, undefined, 'beats are not duplicated in the record JSON');
+  const loops = Object.fromEntries(catalogue.combinationCandidates('').map(sample => [sample.id, sample.loopBars]));
+  assert.deepEqual(loops, { loop: 4, phrase: null, guess: null });
+  assert.deepEqual(catalogue.sourceIds(''), ['loop', 'phrase', 'guess']);
+  catalogue.update('phrase', sample => {
+    sample.missing = true;
+  });
+  assert.deepEqual(catalogue.sourceIds(''), ['loop', 'guess']);
+  catalogue.close();
+});
+
+test('a version 1 catalogue gains beat and loop columns and fills them once', async () => {
+  const dir = await temporary();
+  let { catalogue } = await openCatalogue(dir);
+  catalogue.put({ id: 'loop', path: '/x/loop.wav', filename: 'loop.wav', name: 'loop', type: 'Bass', bpm: 90, bpmSource: 'analysis', duration: 32 / 3 });
+  catalogue.close({ backup: false });
+  // Recreate the version 1 layout: no loop_bars, no beats, no derived marker.
+  const db = new DatabaseSync(path.join(dir, catalogueFiles.database));
+  db.exec(`ALTER TABLE samples DROP COLUMN loop_bars;
+    ALTER TABLE sample_records DROP COLUMN beats;
+    DELETE FROM meta WHERE key = 'derivedColumns';
+    PRAGMA user_version = 1;`);
+  db.close();
+  ({ catalogue } = await openCatalogue(dir));
+  assert.equal(catalogue.db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(catalogue.combinationCandidates('')[0].loopBars, 4);
+  catalogue.update('loop', sample => {
+    sample.beats = [0, 0.6667];
+  });
+  assert.deepEqual(catalogue.get('loop').beats, [0, 0.6667]);
+  assert.equal(catalogue.refreshDerivedColumns(), 0, 'derived columns fill once');
   catalogue.close();
 });

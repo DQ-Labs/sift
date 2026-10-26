@@ -1,5 +1,5 @@
 import { parseKey, clampVariety } from './harmony.js';
-import { defaultTiming, repeatModes } from './timing.js';
+import { defaultTiming, repeatModes, startModes } from './timing.js';
 export const trackTypes = ['Drums', 'Bass', 'Melodic', 'Texture', 'Vocal', 'Other'];
 const defaults = trackTypes.slice(0, 4);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -21,14 +21,19 @@ export function normalizeWorkspace(input, { strict = false } = {}) {
     let timing = t.timing;
     if (timing !== undefined && !object(timing)) fail('Layer timing must be an object.');
     if (!object(timing)) timing = {};
-    if (timing.offset !== undefined && timing.offset !== null && (!Number.isFinite(timing.offset) || timing.offset < 0 || timing.offset > 3600)) fail('Start offset must be between 0 and 3600 seconds, or blank for first sound.');
+    if (timing.offset !== undefined && timing.offset !== null && (!Number.isFinite(timing.offset) || timing.offset < 0 || timing.offset > 3600)) fail('Start offset must be between 0 and 3600 seconds, or blank for the automatic start.');
     if (timing.repeat !== undefined && !repeatModes.includes(timing.repeat)) fail('Choose a valid repeat mode.');
+    if (timing.start !== undefined && !startModes.includes(timing.start)) fail('Choose first beat or first sound as the automatic start.');
     return {
       type: trackTypes.includes(t.type) ? t.type : type,
       id: typeof t.id === 'string' && t.id.length > 0 && t.id.length <= 200 ? t.id : null,
       volume: Number.isFinite(t.volume) ? Math.max(0, Math.min(1, t.volume)) : .72,
       locked: t.locked === true, mute: t.mute === true, solo: t.solo === true,
-      timing: { offset:Number.isFinite(timing.offset) && timing.offset >= 0 && timing.offset <= 3600 ? timing.offset : null, repeat:repeatModes.includes(timing.repeat) ? timing.repeat : defaultTiming().repeat }
+      timing: {
+        offset: Number.isFinite(timing.offset) && timing.offset >= 0 && timing.offset <= 3600 ? timing.offset : null,
+        repeat: repeatModes.includes(timing.repeat) ? timing.repeat : defaultTiming().repeat,
+        start: startModes.includes(timing.start) ? timing.start : defaultTiming().start
+      }
     };
   });
   if (input.tempo !== undefined && (!Number.isFinite(input.tempo) || input.tempo < 40 || input.tempo > 240)) fail('Session tempo must be 40–240 BPM.');
