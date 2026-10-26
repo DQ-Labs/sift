@@ -1,49 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, unlink, rename } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { openLibrary, checkMissingSamples } from '../lib/library.mjs';
+import { readLegacyLibrary, checkMissingSamples } from '../lib/library.mjs';
 import { normalizeWorkspace } from '../public/workspace.js';
 
 const temporary = () => mkdtemp(path.join(os.tmpdir(), 'sift-library-'));
 
-test('a damaged catalogue is preserved byte-for-byte and replaced without preventing startup', async () => {
+test('legacy catalogue reading preserves damaged files byte-for-byte and falls back to the backup', async () => {
   for (const damaged of ['{"samples": [', '{"samples":null}']) {
-    const dir = await temporary(); await writeFile(path.join(dir, 'library.json'), damaged);
-    const store = await openLibrary(dir);
-    assert.deepEqual(store.db.samples, []); assert.match(store.recovery.message, /fresh collection/);
-    assert.equal(await readFile(path.join(dir, store.recovery.preserved[0]), 'utf8'), damaged);
-    await store.persist(); assert.deepEqual(JSON.parse(await readFile(path.join(dir, 'library.json'), 'utf8')).samples, []);
+    const dir = await temporary();
+    await writeFile(path.join(dir, 'library.json'), damaged);
+    const legacy = await readLegacyLibrary(dir);
+    assert.deepEqual(legacy.db.samples, []);
+    assert.match(legacy.recovery.message, /fresh collection/);
+    assert.equal(await readFile(path.join(dir, legacy.recovery.preserved[0]), 'utf8'), damaged);
   }
-});
-
-test('rolling backup recovers gems, sets, workspace and metadata after corruption or a missing primary', async () => {
-  const dir = await temporary(), store = await openLibrary(dir);
-  const sample = { id: 'sample', path: path.join(dir, 'test.wav'), filename: 'test.wav', overrides: { bpm: 123, key: null } };
-  store.db.samples.push(sample); store.db.favorites.push(sample.id);
-  store.db.sets.push({ id: 'set', name: 'Keep this', tracks: [{ id: sample.id,timing:{offset:.25,repeat:'2bars'} }], tempo: 123, key:'D min' });
-  store.db.workspace = { tracks: [{ id: sample.id }], tempo: 123, sync: true, key:'C maj', name: 'Working' };
-  await store.persist(); await store.persist();
-  await writeFile(path.join(dir, 'library.json'), 'broken');
-  let recovered = await openLibrary(dir);
-  assert.match(recovered.recovery.message, /restored/); assert.deepEqual(recovered.db.favorites, [sample.id]);
-  assert.equal(recovered.db.sets[0].tracks[0].id, sample.id); assert.equal(recovered.db.workspace.sync, true);
-  assert.equal(recovered.db.workspace.key,'C maj');assert.equal(recovered.db.sets[0].key,'D min');
-  assert.deepEqual(recovered.db.sets[0].tracks[0].timing,{offset:.25,repeat:'2bars'});
-  assert.deepEqual(recovered.db.samples[0].overrides, sample.overrides);
-  await recovered.persist(); await unlink(path.join(dir, 'library.json'));
-  recovered = await openLibrary(dir); assert.deepEqual(recovered.db.favorites, [sample.id]); assert.match(recovered.recovery.message, /restored/);
-});
-
-test('both damaged catalogue files survive recovery and invalid legacy workspaces are repaired', async () => {
   const dir = await temporary();
-  await writeFile(path.join(dir, 'library.json'), 'primary damage'); await writeFile(path.join(dir, 'library.backup.json'), 'backup damage');
-  let store = await openLibrary(dir); assert.equal(store.recovery.preserved.length, 2);
-  assert.equal((await readdir(dir)).filter(name => name.includes('.corrupt-')).length, 2);
-  await writeFile(path.join(dir, 'library.json'), JSON.stringify({ workspace: { tracks: [{ type: ['Drums'], volume: 'bad' }], name: {}, sync: 'false' } }));
-  store = await openLibrary(dir); assert.equal(store.recovery, null);
-  assert.equal(store.db.workspace.tracks[0].type, 'Drums'); assert.equal(store.db.workspace.name, 'Untitled set'); assert.equal(store.db.workspace.sync, false);
+  await writeFile(path.join(dir, 'library.json'), 'broken');
+  await writeFile(path.join(dir, 'library.backup.json'), JSON.stringify({ favorites: ['kept'], analysisPaused: true }));
+  const legacy = await readLegacyLibrary(dir);
+  assert.match(legacy.recovery.message, /restored/);
+  assert.deepEqual(legacy.db.favorites, ['kept']);
+  assert.equal(legacy.db.analysisPaused, true);
+  assert.equal(await readLegacyLibrary(await temporary()), null);
 });
 
 test('workspace validation rejects malformed types, fields and bounds while accepting older partial tracks', () => {
