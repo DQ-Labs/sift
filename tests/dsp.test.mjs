@@ -58,7 +58,10 @@ test('Rubber Band shifts stereo pitches independently of tempo and separates ren
     for(let c=0;c<2;c++){
       let crossings=0;const start=rate,end=rate*3;let previous=b.readFloatLE(header.dataOffset+(start*2+c)*4);
       for(let i=start+1;i<end;i++){const value=b.readFloatLE(header.dataOffset+(i*2+c)*4);if(previous<=0&&value>0)crossings++;previous=value;}
-      const actual=crossings/2,expected=[440,660][c]*2**(semitones/12);assert.ok(Math.abs(actual-expected)<2,`${expected} Hz expected; got ${actual}`);
+      // Pitch accuracy is judged in cents. Rubber Band builds differ by a few
+      // cents when tempo and pitch change together; a wrong shift is 100.
+      const actual=crossings/2,expected=[440,660][c]*2**(semitones/12),cents=1200*Math.log2(actual/expected);
+      assert.ok(Math.abs(cents)<10,`${expected} Hz expected; got ${actual} (${cents.toFixed(1)} cents)`);
     }
     assert.equal(await cache.render(sample,tempo,options),output);
   }
