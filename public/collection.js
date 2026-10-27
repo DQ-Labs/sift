@@ -195,7 +195,6 @@ export function updateCollectionUI() {
   $('#toggleCollection').hidden = !discover;
   $('#toggleCollection').setAttribute('aria-expanded', String(expanded));
   $('#toggleCollection').innerHTML = `${expanded ? 'Hide collection' : 'Browse collection'}${icon('down')}`;
-  $('#collectionHint').hidden = !discover || expanded;
   $('#librarySection').classList.toggle('collection-collapsed', !expanded);
 }
 

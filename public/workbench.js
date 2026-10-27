@@ -118,8 +118,9 @@ export function renderTracks() {
   renderVariety();
   addPitchDetails();
   renderHarmonyStatus();
+  // Only an empty workbench needs a hint.
   $('#workbenchHint').textContent = state.tracks.some(track => track.id)
-    ? 'Clock: set first downbeat and repeat. Locks keep sample choices.'
+    ? ''
     : 'Start with New batch, or add samples from the collection.';
   requestAnimationFrame(drawAll);
   warmTracks();
