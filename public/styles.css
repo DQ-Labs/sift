@@ -165,3 +165,19 @@ body { background: var(--bg); }
 .audition-bar { background: #15181d; }
 .eyebrow { color: var(--accent); }
 .workbench-foot > span:has(#workbenchHint:empty) { display: none; }
+
+/* Source rows: rescan and remove appear on hover or keyboard focus. */
+.source-row { display: flex; align-items: center; border-radius: 4px; }
+.source-row .source-item { flex: 1; min-width: 0; }
+.source-actions { display: none; flex-shrink: 0; gap: 2px; padding-right: 4px; }
+.source-row:hover .source-actions,
+.source-row:focus-within .source-actions { display: flex; }
+.source-row:hover, .source-row:focus-within { background: #202124; }
+.source-actions .icon-button { width: 22px; height: 22px; }
+.source-actions .icon-button svg { width: 12px; height: 12px; }
+
+/* Saved sets: rename and delete beside Open. */
+.set-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Folder paths in a confirmation have no spaces to break on. */
+#confirmMessage { overflow-wrap: anywhere; }

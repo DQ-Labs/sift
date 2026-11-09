@@ -281,6 +281,22 @@ export async function loadSet(set, workspace) {
   saveWorkspace();
 }
 
+// Empties the layers whose sample came from a source that is being removed.
+// Call while those samples are still cached. Returns how many were emptied.
+export function clearLayersFromSource(root) {
+  let cleared = 0;
+  for (const track of state.tracks) {
+    if (sampleById(track.id)?.root !== root) continue;
+    Object.assign(track, { id: null, timing: defaultTiming() });
+    cleared++;
+  }
+  if (!cleared) return 0;
+  stopMix();
+  renderTracks();
+  saveWorkspace();
+  return cleared;
+}
+
 // ---- Sets -----------------------------------------------------------------
 
 function addSet(set, replacedId = null) {

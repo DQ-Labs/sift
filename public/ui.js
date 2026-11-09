@@ -29,6 +29,9 @@ const icons = {
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/>',
   batch: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
+  refresh: '<path d="M20 5v5h-5M4 19v-5h5M19 10a7.5 7.5 0 0 0-13.5-2.5M5 14a7.5 7.5 0 0 0 13.5 2.5"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.1"/>'
 };
 
