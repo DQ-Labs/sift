@@ -111,13 +111,19 @@ for (const server of servers) {
 }
 
 let stopping = false;
-function shutdown() {
+async function shutdown() {
   if (stopping) return;
   stopping = true;
   analysis.close();
   for (const server of servers) server.close();
+  catalogue.stopBackups();
   try {
-    catalogue.close();
+    await catalogue.backupIfChangedInBackground();
+  } catch (error) {
+    console.warn(`Catalogue backup failed: ${error.message}`);
+  }
+  try {
+    catalogue.close({ backup: false });
   } catch (error) {
     console.error(`Could not close the catalogue cleanly: ${error.message}`);
   } finally {
@@ -129,4 +135,7 @@ if (process.send) {
   process.on('message', message => {
     if (message?.type === 'sift:shutdown') shutdown();
   });
+  // The desktop window that started this server has gone (closed, crashed or
+  // killed). Without it nothing would ever stop the server.
+  process.on('disconnect', shutdown);
 }

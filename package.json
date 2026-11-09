@@ -26,8 +26,8 @@
   "scripts": {
     "start": "node server.mjs",
     "desktop": "electron desktop/main.cjs",
-    "test": "node --test tests/*.test.mjs",
-    "test:unit": "node scripts/test-unit.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "test:unit": "node scripts/run-tests.mjs --unit",
     "test:playback": "node scripts/test-playback.cjs",
     "test:packaged": "node scripts/test-packaged.mjs",
     "check:audio-tools": "node scripts/check-audio-tools.mjs",

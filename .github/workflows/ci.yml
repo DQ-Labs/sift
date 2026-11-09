@@ -79,6 +79,11 @@ jobs:
         env:
           SIFT_FFMPEG: build/ffmpeg/ffmpeg.exe
           SIFT_FFPROBE: build/ffmpeg/ffprobe.exe
+      # Informational for now: the hosted runner has not been able to run the
+      # audio suites. If this stays green, make it required and drop test:unit.
+      - name: Full tests against the bundled FFmpeg
+        run: npm test
+        continue-on-error: true
       - run: npm run dist:win
       - name: Packaged backend smoke test
         run: npm run test:packaged -- --headless

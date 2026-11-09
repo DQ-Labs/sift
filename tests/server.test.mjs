@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, unlink, rename, utimes, lstat, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, unlink, rename, utimes, lstat, access, realpath } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -495,7 +495,9 @@ test('an existing library.json is migrated on first start and kept as library.pr
 });
 
 test('sound routes: render priority, CAF audition, reanalysis by source and HEAD diagnostics', async t => {
-  const data = await mkdtemp(path.join(os.tmpdir(), 'sift-sound-'));
+  // The server indexes the folder's real path; on the hosted Windows runner
+  // the temporary directory is an 8.3 short name (RUNNER~1) that differs from it.
+  const data = await realpath(await mkdtemp(path.join(os.tmpdir(), 'sift-sound-')));
   const server = await startServer(t, { port: 44322, dataDir: path.join(data, 'data') });
   const { base, get, getJson, post } = server;
   const samples = path.join(data, 'Pack');

@@ -6,7 +6,7 @@ const { desktopDataPath } = require('./runtime.cjs');
 const { identity } = require('./identity.cjs');
 const { resolveAudioTools, MISSING_TOOLS_MESSAGE } = require('./audio-tools.cjs');
 const { DesktopSettings } = require('./settings.cjs');
-const { createLogger } = require('./logger.cjs');
+const { createLogger, rotateLog } = require('./logger.cjs');
 const { UpdateController, updateMode, launchCheckEnabled } = require('./updates.cjs');
 const { aboutDetail, menuTemplate } = require('./menu.cjs');
 
@@ -22,6 +22,7 @@ mkdirSync(path.join(data, 'desktop-profile'), { recursive: true });
 app.setPath('userData', path.join(data, 'desktop-profile'));
 app.commandLine.appendSwitch('force-renderer-accessibility');
 
+rotateLog(path.join(data, 'desktop.log'));
 const logger = createLogger(path.join(data, 'desktop.log'));
 let win;
 let store;
@@ -33,13 +34,16 @@ const registered = new Map();
 
 // --- Backend lifecycle ----------------------------------------------------
 
-// Asks the packaged backend to flush and exit, killing it after five seconds.
+// Long enough for the backend to finish its closing catalogue backup.
+const backendStopTimeout = 15000;
+
+// Asks the packaged backend to flush and exit, killing it if that takes too long.
 function stopBackend() {
   if (!serverChild || serverChild.exitCode !== null) return Promise.resolve();
   if (backendStopping) return backendStopping;
   const child = serverChild;
   backendStopping = new Promise(resolve => {
-    const timer = setTimeout(() => child.kill(), 5000);
+    const timer = setTimeout(() => child.kill(), backendStopTimeout);
     timer.unref();
     child.once('exit', () => {
       clearTimeout(timer);
@@ -78,6 +82,7 @@ async function fetchCapabilities(timeout) {
 }
 
 function startServer() {
+  for (const name of ['sift.log', 'sift-error.log']) rotateLog(path.join(data, name));
   const out = openSync(path.join(data, 'sift.log'), 'a');
   const err = openSync(path.join(data, 'sift-error.log'), 'a');
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', SIFT_DATA_DIR: data };
@@ -119,8 +124,12 @@ async function connectToServer() {
     if (!(await waitForServer())) throw new Error('Sift could not start. Check sift-error.log (Help → View logs).');
     return;
   }
-  if (capabilities.handoff !== 1 || path.resolve(capabilities.dataDirectory || '') !== data) {
-    throw new Error('Restart the local Sift server: the current instance uses a different version or catalogue.');
+  // A server that was already running: one left by an earlier Sift, or a
+  // development server. It must be this version, on this catalogue.
+  const sameCatalogue = path.resolve(capabilities.dataDirectory || '') === data;
+  const sameVersion = capabilities.version === identity.version;
+  if (capabilities.handoff !== 1 || !sameCatalogue || !sameVersion) {
+    throw new Error('Another Sift server is already running with a different version or catalogue. Close it (end the other Sift in Task Manager if needed), then start Sift again.');
   }
 }
 

@@ -1,4 +1,19 @@
-const { appendFileSync } = require('node:fs');
+const { appendFileSync, renameSync, statSync } = require('node:fs');
+
+const MAX_LOG_BYTES = 5 * 1024 * 1024;
+
+// Keeps a log from growing without limit: once it passes maxBytes it becomes
+// `<name>.1` (replacing the previous one) and a new file starts.
+function rotateLog(file, maxBytes = MAX_LOG_BYTES) {
+  try {
+    if (statSync(file).size <= maxBytes) return false;
+    renameSync(file, `${file}.1`);
+    return true;
+  } catch {
+    // Missing or in use: leave it alone.
+    return false;
+  }
+}
 
 // Appends desktop-process messages to desktop.log in the data folder. Also used
 // as electron-updater's logger, which calls info/warn/error/debug.
@@ -20,4 +35,4 @@ function createLogger(file) {
   };
 }
 
-module.exports = { createLogger };
+module.exports = { createLogger, rotateLog, MAX_LOG_BYTES };
