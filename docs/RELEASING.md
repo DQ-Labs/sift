@@ -10,7 +10,7 @@ Sift is built and published by GitHub Actions in [DQ-Labs/sift](https://github.c
 | --- | --- |
 | Linux tests | In `node:22-bookworm`: installs Debian's FFmpeg (with Rubber Band), `npm ci --ignore-scripts`, checks FFmpeg, runs the full `npm test` suite including analysis, tempo/key processing and handoffs. |
 | Source archive | Builds `Sift-<version>-Source.tar.gz`: the committed tree plus the Essentia.js wrapper source and the FFmpeg source tarball. |
-| Windows build | On `windows-2025`: unit tests, fetches the pinned FFmpeg, builds the NSIS installer and portable EXE (`npm run dist:win`), and runs `npm run test:packaged -- --headless`: package layout and identity, the bundled FFmpeg and its `rubberband` filter, `app-update.yml`/`latest.yml`, and the packaged backend (HTTP/UI assets, demo audio, writable catalogue, persistence across restart, clean shutdown). |
+| Windows build | On `windows-2025`: fetches the pinned FFmpeg, runs the full `npm test` suite against it, builds the NSIS installer and portable EXE (`npm run dist:win`), and runs `npm run test:packaged -- --headless`: package layout and identity, the bundled FFmpeg and its `rubberband` filter, `app-update.yml`/`latest.yml`, and the packaged backend (HTTP/UI assets, demo audio, writable catalogue, persistence across restart, clean shutdown). |
 
 The installer, portable EXE, `latest.yml` and source archive are attached to each run as artifacts for 14 days, so any pull request can be installed for testing.
 
