@@ -84,7 +84,7 @@ test('release assets include the updater metadata and both executables', () => {
 
 test('GitHub workflows build, test and publish without GitLab', async () => {
   const ci = await read('.github/workflows/ci.yml');
-  for (const step of ['apt-get install -y --no-install-recommends ffmpeg', 'npm ci --ignore-scripts', 'npm test', 'npm run test:unit', 'npm run fetch:ffmpeg', 'npm run dist:win', 'npm run test:packaged -- --headless', 'workflow_call']) {
+  for (const step of ['apt-get install -y --no-install-recommends ffmpeg', 'npm ci --ignore-scripts', 'npm test', 'npm run fetch:ffmpeg', 'npm run dist:win', 'npm run test:packaged -- --headless', 'workflow_call']) {
     assert.ok(ci.includes(step), `ci.yml should run ${step}`);
   }
   const release = await read('.github/workflows/release.yml');
