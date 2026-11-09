@@ -14,7 +14,7 @@ The active roadmap is [SIFT_PLAN.md](SIFT_PLAN.md). Its workstreams have strict 
 
 ## Working on it
 
-- Node 22+. `npm ci --ignore-scripts`, then `npm test`. FFmpeg and FFprobe with the `rubberband` filter must be on PATH (on Debian/Ubuntu: `apt-get install -y ffmpeg`), or four DSP/server tests fail.
+- Node 22+. `npm ci --ignore-scripts`, then `npm test`. FFmpeg and FFprobe with the `rubberband` filter must be on PATH (on Debian/Ubuntu: `apt-get install -y ffmpeg`), or four DSP/server tests fail. On Windows, `npm run fetch:ffmpeg` once; `npm test` then uses the pinned build in `build/ffmpeg` automatically.
 - `npm start` runs the server; open http://127.0.0.1:4317.
 - Keep dependencies minimal. No native Node modules (use built-ins such as `node:sqlite`). No front-end bundler or framework.
 - The prototype was written in dense one-line style. New and touched code should be readable: one statement per line, named helpers, short comments only where the reason isn't obvious.
