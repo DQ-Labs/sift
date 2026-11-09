@@ -345,3 +345,54 @@ test('a version 1 catalogue gains beat and loop columns and fills them once', as
   assert.equal(catalogue.refreshDerivedColumns(), 0, 'derived columns fill once');
   catalogue.close();
 });
+
+test('removing a source forgets its samples and gems and empties the layers that used them', async () => {
+  const { catalogue } = await openCatalogue(await temporary());
+  const sample = (id, root) => ({ id, path: path.join(root, `${id}.wav`), filename: `${id}.wav`, name: id, folder: path.basename(root), root, type: 'Drums' });
+  const kept = path.join('D:', 'Kept');
+  const gone = path.join('D:', 'Gone');
+  catalogue.putMany([sample('keep-1', kept), sample('gone-1', gone), sample('gone-2', gone)]);
+  catalogue.addFolder({ path: kept, name: 'Kept' });
+  catalogue.addFolder({ path: gone, name: 'Gone' });
+  catalogue.setFavorites(['keep-1', 'gone-1']);
+  catalogue.setWorkspace({ tracks: [{ id: 'gone-2', timing: { offset: 1.5, repeat: 'bar' } }, { id: 'keep-1' }] });
+  catalogue.addSet({ id: 'mixed', name: 'Mixed', tracks: [{ id: 'gone-1', volume: 0.4, timing: { offset: 0.25, repeat: 'auto' } }, { id: 'keep-1' }] });
+  catalogue.addSet({ id: 'untouched', name: 'Untouched', tracks: [{ id: 'keep-1' }] });
+  const candidatesBefore = catalogue.combinationCandidates('');
+
+  assert.equal(catalogue.removeFolder(path.join('D:', 'Unknown')), null);
+  assert.deepEqual(catalogue.removeFolder(gone), { removed: 2, clearedLayers: 2 });
+
+  assert.deepEqual(catalogue.folders, [{ path: kept, name: 'Kept' }]);
+  assert.equal(catalogue.get('gone-1'), undefined);
+  assert.equal(catalogue.get('gone-2'), undefined);
+  assert.ok(catalogue.get('keep-1'));
+  assert.deepEqual(catalogue.counts().byRoot, { [kept]: 1 });
+  assert.deepEqual(catalogue.favorites, ['keep-1']);
+  const mixed = catalogue.getSet('mixed');
+  assert.deepEqual(mixed.tracks[0], { id: null, volume: 0.4, timing: { offset: null, repeat: 'auto' } });
+  assert.equal(mixed.tracks[1].id, 'keep-1');
+  assert.deepEqual(catalogue.getSet('untouched').tracks, [{ id: 'keep-1' }]);
+  assert.deepEqual(catalogue.workspace.tracks.map(track => track.id), [null, 'keep-1']);
+  assert.equal(catalogue.workspace.tracks[0].timing.offset, null);
+  // Combination candidates are rebuilt without the removed samples.
+  assert.notEqual(catalogue.combinationCandidates(''), candidatesBefore);
+  assert.deepEqual(catalogue.combinationCandidates('').map(candidate => candidate.id), ['keep-1']);
+  // Nothing is left for a second removal.
+  assert.equal(catalogue.removeFolder(gone), null);
+  catalogue.close();
+});
+
+test('saved sets can be renamed and deleted', async () => {
+  const { catalogue } = await openCatalogue(await temporary());
+  catalogue.addSet({ id: 'a', name: 'First', tempo: 90, tracks: [] });
+  catalogue.addSet({ id: 'b', name: 'Second', tracks: [] });
+  assert.deepEqual(catalogue.renameSet('a', 'Renamed'), { id: 'a', name: 'Renamed', tempo: 90, tracks: [] });
+  assert.equal(catalogue.renameSet('missing', 'Nope'), undefined);
+  // Order (newest first) is unchanged by a rename.
+  assert.deepEqual(catalogue.sets.map(set => set.name), ['Second', 'Renamed']);
+  assert.equal(catalogue.removeSet('b'), true);
+  assert.equal(catalogue.removeSet('b'), false);
+  assert.deepEqual(catalogue.sets.map(set => set.id), ['a']);
+  catalogue.close();
+});

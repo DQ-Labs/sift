@@ -546,3 +546,82 @@ test('sound routes: render priority, CAF audition, reanalysis by source and HEAD
   assert.equal(response.headers.get('content-type'), 'application/zip');
   await server.stop();
 });
+
+test('library management: rescan, remove a source, rename and delete sets', async t => {
+  const data = await realpath(await mkdtemp(path.join(os.tmpdir(), 'sift-manage-')));
+  const port = 44357;
+  const server = await startServer(t, { port, dataDir: path.join(data, 'data') });
+  const { getJson, post } = server;
+  const scan = async folder => {
+    assert.equal((await post('/api/scan', { path: folder })).status, 202);
+    await waitForScan(server);
+  };
+  const pack = path.join(data, 'Pack');
+  const other = path.join(data, 'Other');
+  await mkdir(pack);
+  await mkdir(other);
+  await writeFile(path.join(pack, 'kick_100bpm.wav'), makeDemo('Drums', 1, 100).buffer);
+  await writeFile(path.join(other, 'sub_bass.wav'), makeDemo('Bass', 0).buffer);
+  await scan(pack);
+  await scan(other);
+
+  // Rescanning a source picks up a file added since it was indexed.
+  await writeFile(path.join(pack, 'late_pad.wav'), makeDemo('Texture', 2).buffer);
+  await scan(pack);
+  let library = await getJson('/api/library?lite=1');
+  assert.deepEqual(library.folders.map(folder => folder.path), [pack, other]);
+  assert.deepEqual(library.counts.byRoot, { [pack]: 2, [other]: 1 });
+
+  const { items } = await getJson('/api/samples?source=&pageSize=50');
+  const idOf = filename => items.find(sample => sample.filename === filename).id;
+  const kick = idOf('kick_100bpm.wav');
+  const bass = idOf('sub_bass.wav');
+  assert.equal((await post('/api/favorites', { ids: [kick, bass] })).status, 200);
+  assert.equal((await post('/api/workspace', { tracks: [{ id: kick }, { id: bass }] })).status, 200);
+  const first = await (await post('/api/sets', { name: 'Morning', tracks: [{ id: kick }, { id: bass }] })).json();
+  const second = await (await post('/api/sets', { name: 'Evening', tracks: [{ id: bass }] })).json();
+
+  // Renaming: trimmed, never onto another set's name, 404 for an unknown set.
+  let response = await post(`/api/sets/${first.id}/rename`, { name: '  Sunrise  ' });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).name, 'Sunrise');
+  assert.equal((await post(`/api/sets/${first.id}/rename`, { name: 'evening' })).status, 409);
+  assert.equal((await post(`/api/sets/${first.id}/rename`, { name: 'sunrise' })).status, 200);
+  for (const name of ['', '   ', 7, 'x'.repeat(101)]) {
+    assert.equal((await post(`/api/sets/${first.id}/rename`, { name })).status, 400);
+  }
+  assert.equal((await post('/api/sets/unknown/rename', { name: 'Anything' })).status, 404);
+
+  // Removing a source.
+  assert.equal((await post('/api/sources/remove', {})).status, 400);
+  assert.equal((await post('/api/sources/remove', { path: path.join(data, 'Never added') })).status, 404);
+  response = await post('/api/sources/remove', { path: pack });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { removed: 2, clearedLayers: 2 });
+  library = await getJson('/api/library?lite=1');
+  assert.deepEqual(library.folders.map(folder => folder.path), [other]);
+  assert.deepEqual(library.counts.byRoot, { [other]: 1 });
+  assert.deepEqual(library.favorites, [bass]);
+  assert.deepEqual(library.workspace.tracks.map(track => track.id), [null, bass, null, null]);
+  const sunrise = library.sets.find(set => set.id === first.id);
+  assert.equal(sunrise.name, 'sunrise');
+  assert.deepEqual(sunrise.tracks.map(track => track.id), [null, bass, null, null]);
+  assert.equal((await server.get(`/api/samples/${kick}`)).status, 404);
+  assert.equal((await server.get(`/audio/${kick}`)).status, 404);
+  // The files themselves are untouched, and the folder can be added again.
+  await access(path.join(pack, 'kick_100bpm.wav'));
+  await scan(pack);
+  assert.equal((await getJson('/api/library?lite=1')).counts.byRoot[pack], 2);
+
+  // Deleting a set.
+  assert.equal((await post(`/api/sets/${second.id}/delete`, {})).status, 200);
+  assert.equal((await post(`/api/sets/${second.id}/delete`, {})).status, 404);
+  assert.deepEqual((await getJson('/api/library?lite=1')).sets.map(set => set.id), [first.id]);
+
+  // Everything above survives a restart.
+  await server.stop();
+  const restarted = await startServer(t, { port, dataDir: path.join(data, 'data') });
+  library = await restarted.getJson('/api/library?lite=1');
+  assert.deepEqual(library.sets.map(set => set.name), ['sunrise']);
+  assert.deepEqual(library.folders.map(folder => folder.path), [other, pack]);
+});

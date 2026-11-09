@@ -5,7 +5,8 @@ import { normalizeWorkspace } from './workspace.js';
 import { $, icon, escape, colors, toast, formatTime, metadataSource, displayName, plural } from './ui.js';
 import { state, catalog, sampleById } from './state.js';
 import { audition, drawAll, preview, updatePreviewControls } from './player.js';
-import { addSelected, loadSet } from './workbench.js';
+import { addSelected, loadSet, saveWorkspace } from './workbench.js';
+import { confirmAction } from './dialogs.js';
 
 const viewLabels = { discover: 'Discover', library: 'All samples', gems: 'Saved gems', sets: 'Saved sets' };
 
@@ -15,12 +16,24 @@ function sourceButton({ source, label, count, iconName, active, title = '' }) {
   return `<button class="source-item ${active ? 'active' : ''}" data-source="${escape(source)}" title="${escape(title)}">${icon(iconName)}<span class="source-name">${escape(label)}</span><small>${count.toLocaleString()}</small></button>`;
 }
 
+// A folder the user added, with its rescan and remove controls. The clicks
+// are handled in library-status.js.
+function folderRow(folder, count) {
+  const button = sourceButton({ source: folder.path, label: folder.name, count, iconName: 'folder', active: state.source === folder.path, title: folder.path });
+  const name = escape(folder.name);
+  const path = escape(folder.path);
+  return `<div class="source-row">${button}<span class="source-actions">
+    <button class="icon-button" data-source-action="rescan" data-path="${path}" title="Rescan for new, changed and missing files" aria-label="Rescan ${name}">${icon('refresh')}</button>
+    <button class="icon-button" data-source-action="remove" data-path="${path}" title="Remove this source from Sift" aria-label="Remove ${name} from Sift">${icon('trash')}</button>
+  </span></div>`;
+}
+
 export function renderSources() {
   const { real, demo, total, byRoot } = state.counts;
   const buttons = [];
   if (real) buttons.push(sourceButton({ source: '', label: 'All folders', count: real, iconName: 'library', active: !state.source }));
   for (const folder of state.folders) {
-    buttons.push(sourceButton({ source: folder.path, label: folder.name, count: byRoot?.[folder.path] || 0, iconName: 'folder', active: state.source === folder.path, title: folder.path }));
+    buttons.push(folderRow(folder, byRoot?.[folder.path] || 0));
   }
   buttons.push(sourceButton({ source: 'demo', label: 'Sift demo collection', count: demo, iconName: 'folder', active: state.source === 'demo' || !real }));
   $('#sources').innerHTML = buttons.join('');
@@ -179,11 +192,78 @@ function setCard(set) {
   const layers = set.tracks.filter(track => track.id).length;
   const names = set.tracks.map(track => escape(sampleById(track.id)?.name || 'Empty')).join(' / ');
   const date = new Date(set.created).toLocaleDateString();
-  return `<article class="saved-set"><span class="set-icon">${icon('layers')}</span><div><h3>${escape(set.name)}</h3><p>${set.tempo || 92} BPM · ${escape(set.key || 'Original keys')} · ${layers} layers · ${date}<br>${names}</p></div><button class="button" data-load-set="${escape(set.id)}">Open set ${icon('right')}</button></article>`;
+  const id = escape(set.id);
+  const name = escape(set.name);
+  return `<article class="saved-set"><span class="set-icon">${icon('layers')}</span><div><h3>${name}</h3><p>${set.tempo || 92} BPM · ${escape(set.key || 'Original keys')} · ${layers} layers · ${date}<br>${names}</p></div><span class="set-actions">
+    <button class="icon-button" data-rename-set="${id}" title="Rename" aria-label="Rename ${name}">${icon('edit')}</button>
+    <button class="icon-button" data-delete-set="${id}" title="Delete" aria-label="Delete ${name}">${icon('trash')}</button>
+    <button class="button" data-load-set="${id}">Open set ${icon('right')}</button>
+  </span></article>`;
 }
 
 export function renderSets() {
   $('#savedSets').innerHTML = state.sets.map(setCard).join('') || '<div class="empty"><h3>Good combinations deserve a second listen.</h3><p>Save a set from the workbench, or export one, and find it here.</p></div>';
+}
+
+let renaming = null;
+
+function openRename(set) {
+  renaming = set;
+  $('#renameSetName').value = set.name;
+  $('#renameError').textContent = '';
+  $('#renameDialog').showModal();
+  $('#renameSetName').select();
+}
+
+async function renameSet(event) {
+  event.preventDefault();
+  const set = renaming;
+  const name = $('#renameSetName').value.trim();
+  if (!set || !name) return;
+  if (name === set.name) {
+    $('#renameDialog').close();
+    return;
+  }
+  const button = event.submitter || $('#renameForm [type="submit"]');
+  button.disabled = true;
+  try {
+    const renamed = await api(`sets/${encodeURIComponent(set.id)}/rename`, { name });
+    state.sets = state.sets.map(existing => (existing.id === set.id ? renamed : existing));
+    // The workbench label follows the set it was opened from or saved as.
+    if (state.setName === set.name) {
+      state.setName = renamed.name;
+      $('#setLabel').textContent = renamed.name;
+      saveWorkspace();
+    }
+    renderSets();
+    $('#renameDialog').close();
+  } catch (error) {
+    $('#renameError').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteSet(set) {
+  const confirmed = await confirmAction({
+    title: 'Delete this set?',
+    message: `“${set.name}” is removed from your saved sets. Its samples, your gems and any exported files stay where they are.`,
+    confirmLabel: 'Delete set'
+  });
+  if (!confirmed) return;
+  try {
+    await api(`sets/${encodeURIComponent(set.id)}/delete`, {});
+  } catch (error) {
+    // Already gone (deleted in another window) still counts as deleted.
+    if (error.status !== 404) {
+      toast(`Could not delete the set: ${error.message}`);
+      return;
+    }
+  }
+  state.sets = state.sets.filter(existing => existing.id !== set.id);
+  renderSources();
+  renderSets();
+  toast('Set deleted.');
 }
 
 // ---- Views ----------------------------------------------------------------
@@ -303,8 +383,14 @@ export function initCollection() {
   };
   $('#surprise').onclick = surprise;
   $('#savedSets').onclick = event => {
-    const button = event.target.closest('[data-load-set]');
-    const set = button && state.sets.find(candidate => candidate.id === button.dataset.loadSet);
-    if (set) loadSet(set, normalizeWorkspace(set));
+    const button = event.target.closest('[data-load-set], [data-rename-set], [data-delete-set]');
+    if (!button) return;
+    const { loadSet: opening, renameSet: renamingId, deleteSet: deleting } = button.dataset;
+    const set = state.sets.find(candidate => candidate.id === (opening || renamingId || deleting));
+    if (!set) return;
+    if (opening) loadSet(set, normalizeWorkspace(set));
+    else if (renamingId) openRename(set);
+    else deleteSet(set);
   };
+  $('#renameForm').onsubmit = renameSet;
 }

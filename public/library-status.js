@@ -5,7 +5,7 @@ import { $, escape, toast, plural } from './ui.js';
 import { state, catalog, referencedIds, sampleById } from './state.js';
 import { clearSelection, isMixActive, refreshPreviewMetadata } from './player.js';
 import { loadRows, renderSets, renderSources, updateConflictCount } from './collection.js';
-import { renderTracks } from './workbench.js';
+import { clearLayersFromSource, renderTracks } from './workbench.js';
 import { confirmAction } from './dialogs.js';
 
 function showRecovery(recovery) {
@@ -206,6 +206,60 @@ async function addFolder(event) {
   }
 }
 
+// Indexing a folder that is already a source picks up new and changed files
+// and flags the ones that have gone.
+async function rescanSource(folder) {
+  try {
+    await api('scan', { path: folder.path });
+    state.scan = { running: true, count: 0 };
+    state.statusUnavailable = false;
+    renderLibraryActivity();
+    void pollAnalysis();
+  } catch (error) {
+    toast(`Could not rescan ${folder.name}: ${error.message}`);
+  }
+}
+
+function sourceRemovedMessage(folder, result) {
+  let message = `${folder.name} removed · ${plural(result.removed, 'sample')} forgotten.`;
+  if (result.clearedLayers) message += ` ${plural(result.clearedLayers, 'layer')} emptied in saved sets and the workbench.`;
+  return message;
+}
+
+async function removeSource(folder) {
+  const confirmed = await confirmAction({
+    title: `Remove ${folder.name}?`,
+    message: `Sift forgets every sample indexed from ${folder.path}, including gems from it. Layers that use them in saved sets and the workbench become empty. No audio files are touched, and you can add the folder again later.`,
+    confirmLabel: 'Remove source'
+  });
+  if (!confirmed) return;
+  try {
+    const result = await api('sources/remove', { path: folder.path });
+    clearLayersFromSource(folder.path);
+    if (state.source === folder.path) state.source = null;
+    state.page = 0;
+    await refreshLibrary();
+    if (state.selected && !sampleById(state.selected)) clearSelection();
+    renderTracks();
+    toast(sourceRemovedMessage(folder, result));
+  } catch (error) {
+    toast(`Could not remove ${folder.name}: ${error.message}`);
+  }
+}
+
+async function sourceAction(event) {
+  const button = event.target.closest('[data-source-action]');
+  const folder = button && state.folders.find(candidate => candidate.path === button.dataset.path);
+  if (!folder) return;
+  button.disabled = true;
+  try {
+    if (button.dataset.sourceAction === 'rescan') await rescanSource(folder);
+    else await removeSource(folder);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function browseFolder() {
   const button = $('#browseFolder');
   button.disabled = true;
@@ -236,6 +290,7 @@ export function initLibraryStatus() {
     };
   }
   $('#folderForm').onsubmit = addFolder;
+  $('#sources').addEventListener('click', sourceAction);
   $('#browseFolder').onclick = browseFolder;
   $('#libraryActivityAction').onclick = async () => {
     const button = $('#libraryActivityAction');
