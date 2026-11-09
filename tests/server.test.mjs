@@ -68,6 +68,20 @@ function rawStatus(port, requestPath, headers = {}) {
   });
 }
 
+// On Windows a virus scanner or the indexer can briefly hold a file that was
+// just written, so deleting it fails with EBUSY or EPERM. Nothing in Sift
+// keeps these files open.
+async function unlinkWhenFree(file) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await unlink(file);
+    } catch (error) {
+      if (!['EBUSY', 'EPERM'].includes(error.code) || attempt >= 40) throw error;
+      await pause(50);
+    }
+  }
+}
+
 async function waitForScan(server) {
   for (let i = 0; i < 200; i++) {
     if (!(await server.getJson('/api/scan')).running) return;
@@ -313,8 +327,8 @@ test('local server indexes, streams and persists without exposing arbitrary file
   await rescan();
   library = await getJson('/api/library');
   const orphan = library.samples.find(s => s.filename === 'orphan.wav');
-  await unlink(orphanPath);
-  await unlink(imported.path);
+  await unlinkWhenFree(orphanPath);
+  await unlinkWhenFree(imported.path);
   await rescan();
   assert.equal((await getJson(`/api/samples/${imported.id}`)).missing, true);
   assert.equal((await get(`/audio/${imported.id}`)).status, 404);
