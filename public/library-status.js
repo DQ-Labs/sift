@@ -326,8 +326,7 @@ export function initLibraryStatus() {
   };
   $('#analyzeSource').onclick = async () => {
     try {
-      const ids = await catalog.sourceSampleIds(state.source);
-      await analysisAction('reanalyze', { ids });
+      await analysisAction('reanalyze', { source: state.source || '' });
       toast('Source queued for audio analysis. Your corrections are preserved.');
     } catch (error) {
       toast(error.message);

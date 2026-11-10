@@ -82,6 +82,15 @@ async function unlinkWhenFree(file) {
   }
 }
 
+// The library with every sample attached. GET /api/library carries none;
+// the collection pages through /api/samples.
+async function fullLibrary(server) {
+  const library = await server.getJson('/api/library');
+  const list = async source => (await server.getJson(`/api/samples?source=${source}&pageSize=500`)).items;
+  library.samples = [...(await list('demo')), ...(library.counts.real ? await list('') : [])];
+  return library;
+}
+
 async function waitForScan(server) {
   for (let i = 0; i < 200; i++) {
     if (!(await server.getJson('/api/scan')).running) return;
@@ -98,7 +107,8 @@ test('local server indexes, streams and persists without exposing arbitrary file
   const { base, get, getJson, post } = server;
   let response = await get('/api/library');
   assert.equal(response.status, 200);
-  let library = await response.json();
+  assert.equal((await response.json()).samples, undefined, 'the library response never carries samples');
+  let library = await fullLibrary(server);
   assert.equal(library.samples.length, 12);
   const libraryStatus = await getJson('/api/library/status');
   assert.equal(libraryStatus.scan.running, false);
@@ -145,7 +155,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   response = await post('/api/scan', { path: samples });
   assert.equal(response.status, 202);
   await waitForScan(server);
-  library = await getJson('/api/library');
+  library = await fullLibrary(server);
   assert.equal(library.samples.length, 13);
   const imported = library.samples.find(s => !s.demo);
   assert.equal(imported.bpm, 110);
@@ -326,7 +336,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
     await waitForScan(server);
   };
   await rescan();
-  library = await getJson('/api/library');
+  library = await fullLibrary(server);
   const orphan = library.samples.find(s => s.filename === 'orphan.wav');
   await unlinkWhenFree(orphanPath);
   await unlinkWhenFree(imported.path);
@@ -337,7 +347,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   assert.equal(response.status, 200);
   assert.equal((await response.json()).removed, 1);
   assert.equal((await get(`/api/samples/${orphan.id}`)).status, 404);
-  library = await getJson('/api/library');
+  library = await fullLibrary(server);
   assert.ok(library.samples.some(s => s.id === imported.id));
   assert.deepEqual(library.favorites, [imported.id]);
   assert.equal(library.sets[0].tracks[0].id, imported.id);

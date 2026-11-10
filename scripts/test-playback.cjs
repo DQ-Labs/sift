@@ -21,8 +21,13 @@ const server=require('node:http').createServer((req,res)=>{
   const json=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
   const {pathname}=new URL(req.url,'http://127.0.0.1');
   if(pathname==='/api/library/status')return json({scan,analysis});
-  // Answers ?lite=1 like a server without the query API: with every sample.
-  if(pathname==='/api/library')return json({samples:[],favorites:[],folders:[],sets:[],workspace:{},scan,analysis});
+  // An empty library: no samples to page through, and nothing to hydrate.
+  if (pathname === '/api/library') {
+    const counts = { total: 0, real: 0, demo: 0, conflicts: 0, missing: 0, invalid: 0, analyzed: 0, analysisErrors: 0, byRoot: {} };
+    return json({ favorites: [], folders: [], sets: [], workspace: {}, recovery: null, scan, analysis, counts });
+  }
+  if (pathname === '/api/samples') return json({ total: 0, page: 0, pageSize: 50, items: [] });
+  if (pathname === '/api/samples/batch') return json({ items: [] });
   if(pathname==='/api/capabilities')return json({handoff:1,version:'0.0.0-playback',desktopAvailable:false});
   if(pathname==='/api/analysis'){
     let input='';req.on('data',chunk=>input+=chunk);req.on('end',()=>{analysis.paused=JSON.parse(input).action==='pause';json(analysis);});return;
