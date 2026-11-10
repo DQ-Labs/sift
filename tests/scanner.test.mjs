@@ -242,3 +242,74 @@ test('corrections made while a scan runs are kept', async () => {
   assert.deepEqual(catalogue.get(id).overrides, { bpm: 77 });
   catalogue.close();
 });
+
+test('nested sources: each file belongs to its deepest source, whichever was added first', async () => {
+  const files = {
+    'Samples\\Drums\\kick.flac': 10,
+    'Samples\\Drums\\snare.flac': 11,
+    'Samples\\pad.flac': 12,
+    'Field\\rain.flac': 13
+  };
+  const drive = 'D:\\';
+  const samplesFolder = 'D:\\Samples';
+  const drums = 'D:\\Samples\\Drums';
+  const rootOf = catalogue => Object.fromEntries(catalogue.allSamples().map(sample => [sample.filename, sample.root]));
+
+  // A folder first, then the drive it is on.
+  let { catalogue } = await openCatalogue(await temporary('sift-nested-'));
+  let analysis = recordingAnalysis();
+  let scanner = new Scanner({ catalogue, analysis, fs: fakeDrive(files), platform: 'win32', pathApi: path.win32 });
+  await scanner.scan(samplesFolder);
+  analyzeAll(catalogue);
+  await scanner.scan(drive);
+  assert.equal(scanner.status.error, null);
+  assert.deepEqual(catalogue.counts().byRoot, { [samplesFolder]: 3, [drive]: 1 });
+  assert.deepEqual(rootOf(catalogue), { 'kick.flac': samplesFolder, 'snare.flac': samplesFolder, 'pad.flac': samplesFolder, 'rain.flac': drive });
+  // Only the file the first scan never saw is new to analysis.
+  assert.deepEqual(analysis.enqueued.at(-1), [byFilename(catalogue).get('rain.flac').id]);
+
+  // A deeper folder added afterwards takes its files over, analysis and all.
+  analyzeAll(catalogue);
+  const kickBefore = byFilename(catalogue).get('kick.flac');
+  await scanner.scan(drums);
+  assert.deepEqual(catalogue.counts().byRoot, { [drums]: 2, [samplesFolder]: 1, [drive]: 1 });
+  const kick = byFilename(catalogue).get('kick.flac');
+  assert.equal(kick.id, kickBefore.id);
+  assert.equal(kick.folder, 'Drums');
+  assert.deepEqual(kick.analysis, kickBefore.analysis);
+  assert.deepEqual(analysis.enqueued.at(-1), [], 'moving a file between sources does not reanalyze it');
+  // Rescanning an outer source leaves the inner ones' files where they are.
+  await scanner.scan(drive);
+  assert.deepEqual(catalogue.counts().byRoot, { [drums]: 2, [samplesFolder]: 1, [drive]: 1 });
+  // Removing the inner source forgets its files; the next scan of the outer
+  // one finds them again under the source that now owns them.
+  assert.equal(catalogue.removeFolder(drums).removed, 2);
+  await scanner.scan(drive);
+  assert.deepEqual(catalogue.counts().byRoot, { [samplesFolder]: 3, [drive]: 1 });
+  catalogue.close();
+
+  // The drive first, then a folder on it: the same split.
+  ({ catalogue } = await openCatalogue(await temporary('sift-nested-')));
+  analysis = recordingAnalysis();
+  scanner = new Scanner({ catalogue, analysis, fs: fakeDrive(files), platform: 'win32', pathApi: path.win32 });
+  await scanner.scan(drive);
+  assert.deepEqual(catalogue.counts().byRoot, { [drive]: 4 });
+  await scanner.scan(samplesFolder);
+  assert.deepEqual(catalogue.counts().byRoot, { [samplesFolder]: 3, [drive]: 1 });
+  catalogue.close();
+});
+
+test('a file that vanished from a nested source is flagged when the outer source is scanned', async () => {
+  const files = { 'Samples\\kick.flac': 10, 'Samples\\gone.flac': 11, 'rain.flac': 12 };
+  const { catalogue } = await openCatalogue(await temporary('sift-nested-missing-'));
+  const scan = (root, present) => new Scanner({ catalogue, analysis: recordingAnalysis(), fs: fakeDrive(present), platform: 'win32', pathApi: path.win32 }).scan(root);
+  await scan('D:\\Samples', files);
+  await scan('D:\\', files);
+  const { 'Samples\\gone.flac': removed, ...remaining } = files;
+  await scan('D:\\', remaining);
+  const samples = byFilename(catalogue);
+  assert.equal(samples.get('gone.flac').missing, true);
+  assert.ok(!samples.get('kick.flac').missing);
+  assert.ok(!samples.get('rain.flac').missing);
+  catalogue.close();
+});
