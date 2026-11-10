@@ -336,7 +336,7 @@ test('a version 1 catalogue gains beat and loop columns and fills them once', as
     PRAGMA user_version = 1;`);
   db.close();
   ({ catalogue } = await openCatalogue(dir));
-  assert.equal(catalogue.db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(catalogue.db.prepare('PRAGMA user_version').get().user_version, 3);
   assert.equal(catalogue.combinationCandidates('')[0].loopBars, 4);
   catalogue.update('loop', sample => {
     sample.beats = [0, 0.6667];
@@ -394,5 +394,73 @@ test('saved sets can be renamed and deleted', async () => {
   assert.equal(catalogue.removeSet('b'), true);
   assert.equal(catalogue.removeSet('b'), false);
   assert.deepEqual(catalogue.sets.map(set => set.id), ['a']);
+  catalogue.close();
+});
+
+// The SQL query() runs for `filter`, with each statement's query plan.
+function queryPlans(catalogue, filter) {
+  const prepared = [];
+  const statement = catalogue.statement.bind(catalogue);
+  catalogue.statement = sql => {
+    prepared.push(sql);
+    return statement(sql);
+  };
+  try {
+    catalogue.query(filter);
+  } finally {
+    delete catalogue.statement;
+  }
+  const plan = sql => catalogue.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map(row => row.detail).join(' | ');
+  const find = pattern => plan(prepared.find(sql => pattern.test(sql)));
+  return { count: find(/^SELECT count/), page: find(/^SELECT seq FROM samples/) };
+}
+
+test('a version 2 catalogue gains the name index in place and keeps its data', async () => {
+  const dir = await temporary();
+  let { catalogue } = await openCatalogue(dir);
+  catalogue.putMany(syntheticSamples(300, { seed: 3 }));
+  catalogue.addSet({ id: 'kept', name: 'Kept', tracks: [{ id: 'sample-5' }] });
+  const before = catalogue.query({ page: 2, pageSize: 20 }).items.map(sample => sample.id);
+  catalogue.close({ backup: false });
+  // Recreate the version 2 layout: everything but the index.
+  const db = new DatabaseSync(path.join(dir, catalogueFiles.database));
+  db.exec('DROP INDEX samples_name; PRAGMA user_version = 2;');
+  db.close();
+  ({ catalogue } = await openCatalogue(dir));
+  assert.equal(catalogue.db.prepare('PRAGMA user_version').get().user_version, 3);
+  const indexes = catalogue.db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'samples'").all().map(row => row.name);
+  assert.ok(indexes.includes('samples_name'));
+  assert.equal(catalogue.counts().total, 300);
+  assert.deepEqual(catalogue.sets.map(set => set.id), ['kept']);
+  assert.deepEqual(catalogue.query({ page: 2, pageSize: 20 }).items.map(sample => sample.id), before);
+  catalogue.close({ backup: false });
+  // A second start has nothing left to migrate.
+  ({ catalogue } = await openCatalogue(dir));
+  assert.equal(catalogue.db.prepare('PRAGMA user_version').get().user_version, 3);
+  catalogue.close();
+});
+
+test('browsing reads pages off the name index; filtered queries still sort their matches', async () => {
+  const { catalogue } = await syntheticCatalogue(2000);
+  catalogue.db.exec('ANALYZE');
+  const walksIndex = /USING COVERING INDEX samples_name/;
+  const sorts = /USE TEMP B-TREE FOR ORDER BY/;
+  // Whole collection, one source, the demo collection: no sort, no table reads.
+  for (const filter of [{}, { page: 30 }, { source: '/library/Two', page: 5 }, { source: 'demo' }]) {
+    const plans = queryPlans(catalogue, filter);
+    assert.match(plans.page, walksIndex, JSON.stringify(filter));
+    assert.doesNotMatch(plans.page, sorts, JSON.stringify(filter));
+    // The count may use the root index instead; either way it reads no table rows.
+    assert.match(plans.count, /USING COVERING INDEX/, JSON.stringify(filter));
+  }
+  // Anything narrower sorts its matches, so a rare match never costs an
+  // index walk over the whole catalogue.
+  for (const filter of [{ q: 'nothing matches this' }, { conflicts: true }, { type: 'Drums' }, { bpm: 'slow' }, { view: 'gems' }]) {
+    const plans = queryPlans(catalogue, filter);
+    assert.doesNotMatch(plans.page, /samples_name/, JSON.stringify(filter));
+    assert.match(plans.page, sorts, JSON.stringify(filter));
+  }
+  // Other orders are untouched.
+  assert.match(queryPlans(catalogue, { sort: 'bpm' }).page, sorts);
   catalogue.close();
 });
