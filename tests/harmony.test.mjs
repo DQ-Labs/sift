@@ -23,8 +23,8 @@ test('key matching uses the shortest scale transposition and preserves major/min
 
 test('key and tempo processing are independent, and unknown metadata never implies a match', () => {
   const sample={type:'Bass',bpm:120,key:'G min'};
-  assert.deepEqual(renderPlan(sample,{tempo:180,sync:false,key:'A min'}),{...pitchPlan(sample,'A min'),rate:1,tempoUnknown:false,processed:true});
-  assert.equal(renderPlan(sample,{tempo:180,sync:true,key:null}).rate,1.5);
+  assert.deepEqual(renderPlan(sample,{tempo:180,sync:false,key:'A min'}),{...pitchPlan(sample,'A min'),rate:1,octaves:0,tempoUnknown:false,processed:true});
+  assert.equal(renderPlan(sample,{tempo:150,sync:true,key:null}).rate,1.25);
   const unknown=renderPlan({...sample,bpm:null,key:null},{tempo:180,sync:true,key:'A min'});
   assert.equal(unknown.processed,false);assert.equal(unknown.tempoUnknown,true);assert.equal(unknown.status,'unknown');
 });
@@ -67,8 +67,9 @@ test('variety narrows or widens the weighted pool while 0.5 keeps the original b
   assert.equal(clampVariety(-1), 0);assert.equal(clampVariety(Number.NaN), .5);
   assert.ok(varietyPool(0).band < 1 && varietyPool(1).band > 10);
   const settings={tempo:120,sync:true,key:'A min'};
-  // Costs: exact 0, +3 BPM ~0.4, 132 BPM ~1.4, 160 BPM ~4.2, 240 BPM 10.
-  const pool=[120,123,132,160,240].map((bpm,n)=>({id:`b${n}`,type:'Bass',bpm,key:'A min',size:1000,duration:7}));
+  // Costs: exact 0, +3 BPM ~0.4, 132 BPM ~1.4, 160 BPM ~4.2, 170 BPM ~6.0
+  // (stretched 1.41× into double time, the farthest a tempo can be).
+  const pool=[120,123,132,160,170].map((bpm,n)=>({id:`b${n}`,type:'Bass',bpm,key:'A min',size:1000,duration:7}));
   const picks=variety=>{
     const seen=new Set();
     for(let n=0;n<200;n++)seen.add(chooseCombination([{type:'Bass'}],pool,{...settings,variety},null,()=>n/200)[0].id);

@@ -11,6 +11,15 @@ export function varietyLabel(value) {
 const pad = number => String(number).padStart(2, '0');
 
 // "Mix export · 2026-10-26 14:03:05", in local time, for automatic sets.
+// How a layer sits against the session when their tempos are octaves apart.
+// `octaves` comes from renderPlan(): 1 when the session is twice as fast.
+export function tempoFeel(octaves) {
+  if (!octaves) return '';
+  const factor = 2 ** Math.abs(octaves);
+  if (octaves > 0) return factor === 2 ? 'half-time' : `1/${factor} time`;
+  return factor === 2 ? 'double-time' : `${factor}× time`;
+}
+
 export function timestampedSetName(date, kind) {
   const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;

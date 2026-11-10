@@ -1,11 +1,11 @@
 // The four-layer workbench: layers, rerolls, session controls, sets and export.
 import { api } from './api.js';
-import { pitchPlan, clampVariety } from './harmony.js';
+import { pitchPlan, renderPlan, clampVariety } from './harmony.js';
 import { defaultTiming } from './timing.js';
 import { mixScale, encodeWav } from './export-audio.js';
 import { $, icon, escape, colors, toast, saveFile, displayName } from './ui.js';
 import { state, catalog, sampleById, currentSettings, snapshot, applyWorkspace } from './state.js';
-import { candidateContext, findSetByName, layerForSample, timestampedSetName, varietyLabel } from './workbench-model.js';
+import { candidateContext, findSetByName, layerForSample, tempoFeel, timestampedSetName, varietyLabel } from './workbench-model.js';
 import {
   drawAll, isMixActive, playMix, prepareCycle, preparedFor, renderExportLayers,
   restartMixIfActive, restartMixSoon, stopMix, updateGains, warmTracks
@@ -45,7 +45,9 @@ export function commitTransportControls({ save = true } = {}) {
 function trackMeta(sample) {
   if (!sample) return 'Choose from the collection';
   const hint = sample.bpmSource === 'filename-hint' ? '?' : '';
-  return `${hint}${sample.bpm || '—'} BPM · ${escape(sample.key || 'Unpitched / unknown')}`;
+  // A tempo read from a clip's length has no octave to compare.
+  const feel = sample.bpmSource === 'length' ? '' : tempoFeel(renderPlan(sample, currentSettings()).octaves);
+  return `${hint}${sample.bpm || '—'} BPM${feel ? ` · ${feel}` : ''} · ${escape(sample.key || 'Unpitched / unknown')}`;
 }
 
 function trackRow(track, index) {

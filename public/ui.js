@@ -48,7 +48,8 @@ export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => e
 
 export const colors = { Drums: '#ff9a4d', Bass: '#4fdc9a', Melodic: '#5aa9ff', Texture: '#b88cff', Vocal: '#ff6f91', Other: '#9aa3b2' };
 
-export const metadataSource = source => source === 'filename-hint' ? 'unverified filename number' : source || 'unknown';
+const sourceLabels = { 'filename-hint': 'unverified filename number', length: 'clip length' };
+export const metadataSource = source => sourceLabels[source] || source || 'unknown';
 
 export const displayName = sample => sample.name.replaceAll('_', ' ');
 
