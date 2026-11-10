@@ -11,7 +11,7 @@ import { HandoffStore } from './lib/handoff.mjs';
 import { MediaToolStatus } from './lib/system.mjs';
 import { listenLoopback } from './lib/loopback.mjs';
 import { Router } from './lib/router.mjs';
-import { checkLocalRequest, sendJson } from './lib/http.mjs';
+import { checkLocalRequest, errorResponse, sendJson } from './lib/http.mjs';
 import { registerSystemRoutes, capabilities } from './lib/routes/system.mjs';
 import { registerLibraryRoutes } from './lib/routes/library.mjs';
 import { registerSampleRoutes } from './lib/routes/samples.mjs';
@@ -68,15 +68,15 @@ for (const register of [
   registerStaticRoutes
 ]) register(router, app);
 
-const unavailableMessage = 'File or folder is unavailable. Reconnect the drive or check the path.';
-
-function sendError(res, error) {
+function sendError(req, res, error) {
   if (res.headersSent) {
     res.destroy();
     return;
   }
-  if (!error.status && !(error instanceof SyntaxError)) console.error(`Request failed: ${error.message}`);
-  sendJson(res, { error: error.code === 'ENOENT' ? unavailableMessage : error.message }, error.status || 400);
+  const { status, message } = errorResponse(error);
+  // A 5xx is Sift's own fault; keep the detail for the diagnostics report.
+  if (status >= 500) console.error(`${req.method} ${req.url.split('?')[0]} failed (${status}): ${error?.stack || message}`);
+  sendJson(res, { error: message }, status);
 }
 
 async function handleRequest(req, res) {
@@ -87,7 +87,7 @@ async function handleRequest(req, res) {
     if (!route) return sendJson(res, { error: 'Not found' }, 404);
     await route.handler({ req, res, url, params: route.params });
   } catch (error) {
-    sendError(res, error);
+    sendError(req, res, error);
   }
 }
 

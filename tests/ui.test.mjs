@@ -1,6 +1,5 @@
 // Drives the real front end in headless Chromium against a real Sift server:
-// once as-is (older full-library API) and once with the query API contract
-// mocked on top. Skipped when Playwright or its Chromium is unavailable.
+// once as-is and once with a large synthetic catalogue mocked on top. Skipped when Playwright or its Chromium is unavailable.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -60,30 +59,10 @@ async function openApp(browser, base, setup = async () => {}) {
   return { page, errors, result };
 }
 
-// Makes the real server look like one from before the query API: ?lite=1 is
-// ignored, the query routes and diagnostics are missing, and capabilities
-// carry no version.
-async function installLegacyServer(page, base) {
-  const missing = ['/api/samples', '/api/combination', '/api/diagnostics'];
-  await page.route(url => url.href.startsWith(base), async route => {
-    const url = new URL(route.request().url());
-    if (missing.some(prefix => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))) {
-      return route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"Not found"}' });
-    }
-    if (url.pathname === '/api/library' && url.searchParams.has('lite')) return route.continue({ url: `${base}/api/library` });
-    if (url.pathname === '/api/capabilities') {
-      const response = await route.fetch();
-      const { version, ...rest } = await response.json();
-      return route.fulfill({ response, json: rest });
-    }
-    return route.continue();
-  });
-}
-
 const trackNames = page => page.$$eval('.track-name', elements => elements.map(element => element.textContent));
 const catalogState = page => page.evaluate(async () => {
   const { catalog, state } = await import('/state.js');
-  return { mode: catalog.mode, held: catalog.samples.length, cached: catalog.cache.size, variety: state.variety };
+  return { cached: catalog.cache.size, variety: state.variety };
 });
 const isPlaying = page => page.waitForFunction(() => document.querySelector('#workspace').classList.contains('playing'), null, { timeout: 30000 });
 
@@ -136,15 +115,14 @@ async function exportAndHandoff(page) {
   await page.click('[data-view="discover"]');
 }
 
-test('front end against a server without the query API', { skip: !chromium && 'Playwright is not installed' }, async t => {
+test('front end against the real server and its demo collection', { skip: !chromium && 'Playwright is not installed' }, async t => {
   const browser = await launchBrowser();
   if (!browser) return t.skip('Chromium is not available');
   t.after(() => browser.close());
   const base = await startServer(t, 44331);
-  const { page, errors } = await openApp(browser, base, page => installLegacyServer(page, base));
+  const { page, errors } = await openApp(browser, base);
 
-  assert.deepEqual(await catalogState(page).then(({ mode, held }) => ({ mode, held })), { mode: 'legacy', held: 12 });
-  assert.equal(await page.$eval('#versionLabel', element => element.hidden), true, 'no version without /api/capabilities.version');
+  assert.equal(await page.textContent('#sampleCount'), '12');
 
   await newBatchAndPlay(page);
   const elapsed = await rerollWhenPrefetched(page, 1);
@@ -241,10 +219,6 @@ test('front end against the query API contract with a large catalogue', { skip: 
   const base = await startServer(t, 44332);
   const { page, errors, result: stats } = await openApp(browser, base, page => installContractMock(page, base, { synthetic: 20000, version: '0.4.0-alpha.1' }));
 
-  const initial = await catalogState(page);
-  assert.equal(initial.mode, 'remote');
-  assert.equal(initial.held, 0, 'no full sample array in the browser');
-  assert.equal(stats.fullLibrary, 0, 'GET /api/library without ?lite=1 is never used');
   await page.waitForFunction(() => !document.querySelector('#versionLabel').hidden);
   assert.equal(await page.textContent('#versionLabel'), 'SIFT / 0.4.0-alpha.1');
   assert.equal(await page.textContent('#sampleCount'), '20,000');
@@ -308,9 +282,7 @@ test('front end against the query API contract with a large catalogue', { skip: 
   assert.equal((await download).suggestedFilename(), 'sift-diagnostics-test.zip');
 
   const final = await catalogState(page);
-  assert.equal(final.held, 0);
   assert.ok(final.cached < 200, `browser cache holds ${final.cached} samples`);
-  assert.equal(stats.fullLibrary, 0);
   assert.ok(stats.largestResponse < 200000, `largest catalogue response was ${stats.largestResponse} bytes`);
   assert.deepEqual(errors, []);
 });

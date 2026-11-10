@@ -82,6 +82,15 @@ async function unlinkWhenFree(file) {
   }
 }
 
+// The library with every sample attached. GET /api/library carries none;
+// the collection pages through /api/samples.
+async function fullLibrary(server) {
+  const library = await server.getJson('/api/library');
+  const list = async source => (await server.getJson(`/api/samples?source=${source}&pageSize=500`)).items;
+  library.samples = [...(await list('demo')), ...(library.counts.real ? await list('') : [])];
+  return library;
+}
+
 async function waitForScan(server) {
   for (let i = 0; i < 200; i++) {
     if (!(await server.getJson('/api/scan')).running) return;
@@ -98,7 +107,8 @@ test('local server indexes, streams and persists without exposing arbitrary file
   const { base, get, getJson, post } = server;
   let response = await get('/api/library');
   assert.equal(response.status, 200);
-  let library = await response.json();
+  assert.equal((await response.json()).samples, undefined, 'the library response never carries samples');
+  let library = await fullLibrary(server);
   assert.equal(library.samples.length, 12);
   const libraryStatus = await getJson('/api/library/status');
   assert.equal(libraryStatus.scan.running, false);
@@ -145,7 +155,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   response = await post('/api/scan', { path: samples });
   assert.equal(response.status, 202);
   await waitForScan(server);
-  library = await getJson('/api/library');
+  library = await fullLibrary(server);
   assert.equal(library.samples.length, 13);
   const imported = library.samples.find(s => !s.demo);
   assert.equal(imported.bpm, 110);
@@ -272,7 +282,8 @@ test('local server indexes, streams and persists without exposing arbitrary file
   assert.equal(response.status, 201);
   const handoff = await response.json();
   const stem = Buffer.from(encodeWav([new Float32Array(handoff.frames).fill(0.1), new Float32Array(handoff.frames).fill(-0.1)]));
-  assert.equal((await get(`/api/handoffs/${handoff.id}`)).status, 400);
+  // Not finished yet, so there is nothing to fetch.
+  assert.equal((await get(`/api/handoffs/${handoff.id}`)).status, 404);
   const putStem = (index, headers = {}) => fetch(`${base}/api/handoffs/${handoff.id}/stems/${index}`, { method: 'PUT', headers: { 'Content-Type': 'audio/wav', ...headers }, body: stem });
   assert.equal((await putStem(0, { Origin: 'https://attacker.example' })).status, 403);
   assert.equal((await putStem(4)).status, 404);
@@ -325,7 +336,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
     await waitForScan(server);
   };
   await rescan();
-  library = await getJson('/api/library');
+  library = await fullLibrary(server);
   const orphan = library.samples.find(s => s.filename === 'orphan.wav');
   await unlinkWhenFree(orphanPath);
   await unlinkWhenFree(imported.path);
@@ -336,7 +347,7 @@ test('local server indexes, streams and persists without exposing arbitrary file
   assert.equal(response.status, 200);
   assert.equal((await response.json()).removed, 1);
   assert.equal((await get(`/api/samples/${orphan.id}`)).status, 404);
-  library = await getJson('/api/library');
+  library = await fullLibrary(server);
   assert.ok(library.samples.some(s => s.id === imported.id));
   assert.deepEqual(library.favorites, [imported.id]);
   assert.equal(library.sets[0].tracks[0].id, imported.id);
@@ -595,8 +606,20 @@ test('library management: rescan, remove a source, rename and delete sets', asyn
   const first = await (await post('/api/sets', { name: 'Morning', tracks: [{ id: kick }, { id: bass }] })).json();
   const second = await (await post('/api/sets', { name: 'Evening', tracks: [{ id: bass }] })).json();
 
+  // Bodies that are not a JSON object are the client's mistake, not a crash.
+  const raw = body => fetch(`${server.base}/api/favorites`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  for (const body of ['{"ids":', 'null', '[]', '"text"', '7']) {
+    assert.equal((await raw(body)).status, 400, body);
+  }
+  // A folder that does not exist is not found, rather than a bad request.
+  let response = await post('/api/scan', { path: path.join(data, 'No such folder') });
+  assert.equal(response.status, 404);
+  assert.match((await response.json()).error, /unavailable/);
+  assert.equal((await post('/api/stretch', { id: 'unknown', tempo: 120 })).status, 404);
+  assert.equal((await post('/api/stretch', { id: kick, tempo: 999 })).status, 400);
+
   // Renaming: trimmed, never onto another set's name, 404 for an unknown set.
-  let response = await post(`/api/sets/${first.id}/rename`, { name: '  Sunrise  ' });
+  response = await post(`/api/sets/${first.id}/rename`, { name: '  Sunrise  ' });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).name, 'Sunrise');
   assert.equal((await post(`/api/sets/${first.id}/rename`, { name: 'evening' })).status, 409);

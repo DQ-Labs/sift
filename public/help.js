@@ -1,7 +1,7 @@
 // Version label, the Help & About dialog and the diagnostics report.
 import { api, endpointExists, fetchDownload } from './api.js';
 import { $, escape, saveFile, toast } from './ui.js';
-import { state, catalog } from './state.js';
+import { state } from './state.js';
 import { timestampedSetName } from './workbench-model.js';
 
 export async function loadCapabilities() {
@@ -37,7 +37,6 @@ function aboutFacts() {
     ['Runs as', window.siftDesktop ? 'Desktop app' : 'Browser on this computer'],
     ['FFmpeg', ffmpegText(capabilities.ffmpeg)],
     ['Data folder', capabilities.dataDirectory],
-    ['Catalogue', catalog.remote ? 'Query API · loads a page at a time' : 'Full library in the browser (older server)'],
     ['Licence', 'AGPL-3.0-only · see THIRD_PARTY.md for bundled components']
   ];
   return facts.filter(([, value]) => value).map(([label, value]) => `<dt>${escape(label)}</dt><dd>${escape(value)}</dd>`).join('');

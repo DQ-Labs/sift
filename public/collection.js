@@ -345,7 +345,7 @@ export function initCollection() {
   $('#search').oninput = event => {
     state.query = event.target.value;
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(resetPageAndLoad, catalog.remote ? 150 : 0);
+    searchTimer = setTimeout(resetPageAndLoad, 150);
   };
   for (const [id, property] of [['typeFilter', 'type'], ['bpmFilter', 'bpm'], ['sort', 'sort']]) {
     $(`#${id}`).onchange = event => {
