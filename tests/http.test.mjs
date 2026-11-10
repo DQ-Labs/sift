@@ -6,6 +6,7 @@ import { publicFile } from '../lib/routes/static.mjs';
 import { sampleQuery } from '../lib/routes/samples.mjs';
 import { sourcePath } from '../lib/routes/scan.mjs';
 import { makeRedactor } from '../lib/logs.mjs';
+import { httpError, errorResponse } from '../lib/http.mjs';
 
 test('routes match methods and decoded single-segment parameters', () => {
   const router = new Router();
@@ -69,4 +70,22 @@ test('diagnostic redaction removes full paths but keeps folder names', () => {
     ['GET http://127.0.0.1:4317/api/samples failed', 'GET http://127.0.0.1:4317/api/samples failed']
   ];
   for (const [input, expected] of cases) assert.equal(redact(input), expected);
+});
+
+test('errors answer with their own status; anything unexpected is a 500', () => {
+  assert.deepEqual(errorResponse(httpError('Choose a folder.')), { status: 400, message: 'Choose a folder.' });
+  assert.deepEqual(errorResponse(httpError('Busy.', 409)), { status: 409, message: 'Busy.' });
+  // File-system errors for a path the request named.
+  for (const code of ['ENOENT', 'ENOTDIR']) {
+    const answer = errorResponse(Object.assign(new Error('raw detail'), { code }));
+    assert.equal(answer.status, 404);
+    assert.match(answer.message, /unavailable/);
+    assert.doesNotMatch(answer.message, /raw detail/);
+  }
+  assert.equal(errorResponse(Object.assign(new Error('raw'), { code: 'EPERM' })).status, 403);
+  // Bugs and faults keep their message for the log and say 500.
+  assert.deepEqual(errorResponse(new TypeError('x is not a function')), { status: 500, message: 'x is not a function' });
+  assert.equal(errorResponse(Object.assign(new Error('odd'), { status: 200 })).status, 500);
+  assert.equal(errorResponse(Object.assign(new Error('odd'), { status: '400' })).status, 500);
+  assert.equal(errorResponse(undefined).status, 500);
 });
