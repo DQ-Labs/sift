@@ -15,6 +15,11 @@ function filenameLabels(sample) {
   return `<p>Filename labels: <strong>${tempo}</strong> · <strong>${escape(labels.key || 'key unknown')}</strong></p>`;
 }
 
+function lengthEvidence(sample) {
+  if (sample.bpmSource !== 'length') return '';
+  return `<p>Tempo from clip length: <strong>${sample.bpm} BPM</strong>. The clip is too short for beat tracking, but its attacks divide it evenly, so Sift treats it as a loop of whole beats. It could equally be half or double this tempo; sessions match those without stretching.</p>`;
+}
+
 function audioEvidence(sample) {
   const analysis = sample.analysis;
   if (analysis?.status === 'error') return `<p class="error">${escape(analysis.error)}</p>`;
@@ -23,7 +28,8 @@ function audioEvidence(sample) {
   return `<p>Audio estimate: <strong>${analysis.bpm ? `${analysis.bpm} BPM` : 'tempo unknown'}</strong> · <strong>${escape(analysis.key || 'key unknown')}</strong></p>`
     + `<p>Beat confidence: ${Number(analysis.bpmConfidence || 0).toFixed(2)} · key strength: ${Number(analysis.keyStrength || 0).toFixed(2)}<br>`
     + `Examined ${analysis.analyzedSeconds.toFixed(1)} seconds${excerpt}. These scores are algorithm measures, not probabilities.</p>`
-    + `<p>${(analysis.warnings || []).map(escape).join('<br>')}</p>`;
+    + `<p>${(analysis.warnings || []).map(escape).join('<br>')}</p>`
+    + lengthEvidence(sample);
 }
 
 function evidence(sample) {

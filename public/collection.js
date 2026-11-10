@@ -94,7 +94,8 @@ export async function loadRows() {
 }
 
 function tempoCell(sample) {
-  const prefix = sample.bpmSource === 'analysis' ? '≈' : sample.bpmSource === 'filename-hint' ? '?' : '';
+  const estimated = sample.bpmSource === 'analysis' || sample.bpmSource === 'length';
+  const prefix = estimated ? '≈' : sample.bpmSource === 'filename-hint' ? '?' : '';
   return `<span class="mono" title="Tempo source: ${escape(metadataSource(sample.bpmSource))}">${prefix}${sample.bpm || '—'}${conflictMarker(sample, 'bpm')}</span>`;
 }
 

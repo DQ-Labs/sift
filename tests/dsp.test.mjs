@@ -40,7 +40,8 @@ test('Rubber Band changes duration while preserving both stereo pitches and cach
   const directory=await mkdtemp(path.join(os.tmpdir(),'sift-stretch-')),file=path.join(directory,'unlabelled.wav'),rate=44100,seconds=6;
   const channels=[440,660].map(f=>Float32Array.from({length:rate*seconds},(_,i)=>.3*Math.sin(2*Math.PI*f*i/rate)));
   await writeFile(file,wavFromChannels(channels));const cache=new StretchCache(path.join(directory,'cache'));const sample={path:file,bpm:120,type:'Melodic'};
-  for(const tempo of [90,180]){
+  // Both tempos are within half an octave of 120, so neither is folded to half or double time.
+  for(const tempo of [90,150]){
     const output=await cache.render(sample,tempo),b=await readFile(output),header=parseWavHeader(b);
     assert.ok(Math.abs(header.duration-seconds*120/tempo)<.04,`duration ${header.duration}`);assert.equal(header.channels,2);assert.equal(header.bits,32);
     for(let c=0;c<2;c++){let crossings=0;const start=Math.floor(header.rate),end=Math.floor(header.rate*3);let previous=b.readFloatLE(header.dataOffset+(start*2+c)*4);for(let i=start+1;i<end;i++){const value=b.readFloatLE(header.dataOffset+(i*2+c)*4);if(previous<=0&&value>0)crossings++;previous=value;}const hz=crossings/((end-start)/header.rate);assert.ok(Math.abs(hz-[440,660][c])<2,`expected ${[440,660][c]} Hz, got ${hz} Hz at ${tempo} BPM`);}
@@ -54,7 +55,7 @@ test('Rubber Band shifts stereo pitches independently of tempo and separates ren
   await writeFile(file,wavFromChannels([440,660].map(f=>Float32Array.from({length:rate*seconds},(_,i)=>.3*Math.sin(2*Math.PI*f*i/rate)))));
   const cache=new StretchCache(path.join(directory,'cache')),sample={path:file,bpm:120,key:'A min',type:'Melodic'};
   const outputs=[];
-  for(const [tempo,sync,key,semitones]of [[180,true,'B min',2],[90,true,'G min',-2],[180,false,'B min',2]]){
+  for(const [tempo,sync,key,semitones]of [[150,true,'B min',2],[90,true,'G min',-2],[150,false,'B min',2]]){
     const options={sync,key},output=await cache.render(sample,tempo,options),b=await readFile(output),header=parseWavHeader(b);outputs.push(output);
     assert.ok(Math.abs(header.duration-seconds*(sync?120/tempo:1))<.04,`duration ${header.duration}`);
     assert.equal(header.channels,2);
@@ -146,12 +147,12 @@ test('every layer type keeps output duration and both stereo pitches exact', asy
   const outputs = new Map();
   for (const type of trackTypes) {
     const sample = { path: file, bpm: 120, key: 'A min', type };
-    const output = await cache.render(sample, 180, { key: 'B min' });
+    const output = await cache.render(sample, 150, { key: 'B min' });
     const bytes = await readFile(output);
     const header = parseWavHeader(bytes);
-    // 1.5× tempo: 6 s becomes 4 s. A frame-level error would be far smaller
+    // 1.25× tempo: 6 s becomes 4.8 s. A frame-level error would be far smaller
     // than 40 ms; a wrong tempo would be off by seconds.
-    assert.ok(Math.abs(header.duration - seconds / 1.5) < .04, `${type}: duration ${header.duration}`);
+    assert.ok(Math.abs(header.duration - seconds / 1.25) < .04, `${type}: duration ${header.duration}`);
     assert.equal(header.channels, 2);
     // Drums are never transposed; everything else moves up two semitones.
     const semitones = type === 'Drums' ? 0 : 2;
@@ -162,7 +163,7 @@ test('every layer type keeps output duration and both stereo pitches exact', asy
       assert.ok(Math.abs(cents) < 10, `${type} channel ${channel}: ${cents.toFixed(1)} cents from ${expected.toFixed(1)} Hz`);
     }
     outputs.set(type, output);
-    assert.equal(await cache.render(sample, 180, { key: 'B min', priority: 'prefetch' }), output, `${type} render is cached`);
+    assert.equal(await cache.render(sample, 150, { key: 'B min', priority: 'prefetch' }), output, `${type} render is cached`);
   }
   assert.equal(new Set(outputs.values()).size, trackTypes.length, 'each type has its own cache entry');
   assert.notDeepEqual(await readFile(outputs.get('Drums')), await readFile(outputs.get('Texture')));

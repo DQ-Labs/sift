@@ -1,4 +1,4 @@
-import { renderPlan, loopTolerance } from './harmony.js';
+import { renderPlan, loopTolerance, tempoMatch } from './harmony.js';
 
 export const repeatModes = ['auto', 'once', 'beat', 'bar', '2bars', '4bars'];
 // How a layer starts when it has no explicit offset: on the first beat of the
@@ -30,7 +30,8 @@ export function planCycle(sample, track, settings, frames, rate, automaticStart 
   const seconds = available / rate, beatSeconds = 60 / settings.tempo;
   const knownTempo = sample.bpm > 0 && sample.bpmSource !== 'filename-hint';
   const conflict = sample.conflicts?.bpm && !sample.conflicts.bpm.resolved;
-  const tempoAligned = sample.bpm > 0 && (settings.sync || Math.abs(sample.bpm - settings.tempo) < .01);
+  // Unsynced layers still line up when their tempo is the session's, or an octave from it.
+  const tempoAligned = sample.bpm > 0 && (settings.sync || Math.abs(tempoMatch(sample.bpm, settings.tempo).rate - 1) < .0001);
   let beats = ({ beat:1, bar:4, '2bars':8, '4bars':16 })[timing.repeat] || 16;
   let inferred = false;
   if (timing.repeat === 'auto' && knownTempo && !conflict && tempoAligned) {

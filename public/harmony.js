@@ -26,16 +26,41 @@ export function pitchPlan(sample, key) {
   };
 }
 
+// How a sample at `bpm` meets a session at `tempo` with the least stretching.
+// Tempos an octave apart share a beat grid, so a 70 BPM loop in a 140 BPM
+// session plays at its own speed, in half time, instead of twice as fast.
+// `octaves` counts the doublings from the sample's tempo to the session's
+// (1 = half time, -1 = double time); `rate` is the speed change left over,
+// always between 1/√2 and √2.
+export function tempoMatch(bpm, tempo) {
+  const ratio = tempo / bpm;
+  const octaves = Math.round(Math.log2(ratio));
+  return { rate: ratio / 2 ** octaves, octaves };
+}
+
 export function renderPlan(sample, { tempo, sync = true, key = null }) {
   const pitch = pitchPlan(sample, key);
   const knownTempo = Number.isFinite(sample.bpm) && sample.bpm > 0;
-  const rate = sync && knownTempo ? tempo / sample.bpm : 1;
-  return { ...pitch, rate, tempoUnknown: sync && !knownTempo, processed: Math.abs(rate - 1) > .000001 || pitch.semitones !== 0 };
+  const { rate, octaves } = sync && knownTempo ? tempoMatch(sample.bpm, tempo) : { rate: 1, octaves: 0 };
+  return { ...pitch, rate, octaves, tempoUnknown: sync && !knownTempo, processed: Math.abs(rate - 1) > .000001 || pitch.semitones !== 0 };
+}
+
+// What each octave of half or double time adds to a match's cost: enough to
+// prefer a sample at the session's own tempo, not enough to rule the other out.
+export const octaveCost = 1;
+
+function tempoCost(sample, tempo) {
+  if (!(sample.bpm > 0)) return 4;
+  const { rate, octaves } = tempoMatch(sample.bpm, tempo);
+  const stretch = Math.abs(Math.log2(rate)) * 10;
+  // A tempo worked out from a clip's length has no octave of its own.
+  if (sample.bpmSource === 'length') return stretch + 1;
+  return stretch + Math.abs(octaves) * octaveCost;
 }
 
 export function combinationCost(sample, { tempo, key = null }) {
   const pitch = pitchPlan(sample, key);
-  let cost = sample.bpm > 0 ? Math.abs(Math.log2(tempo / sample.bpm)) * 10 : 4;
+  let cost = tempoCost(sample, tempo);
   cost += pitch.status === 'unknown' ? 8 : Math.abs(pitch.semitones) * .7;
   if (sample.bpmSource === 'filename-hint') cost += 2;
   for (const field of ['bpm', 'key']) {

@@ -18,8 +18,8 @@ test('automatic starts skip leading silence across stereo, while manual zero and
   assert.ok(automatic.buffer.getChannelData(1).subarray(0,rate).some(n=>n>.01));
   const manual=makeCycle(fakeContext,input,sample,track(0,'once'),settings);
   assert.equal(manual.plan.offset,0);assert.ok(manual.buffer.getChannelData(1).every(n=>n===0));
-  const shifted=makeCycle(fakeContext,input,sample,track(null,'once'),{...settings,tempo:180});
-  assert.ok(Math.abs(shifted.plan.offset-first/rate*1.5)<1e-6);
+  const shifted=makeCycle(fakeContext,input,sample,track(null,'once'),{...settings,tempo:150});
+  assert.ok(Math.abs(shifted.plan.offset-first/rate*1.25)<1e-6);
   assert.equal(audibleStart(fakeContext.createBuffer(2,rate,rate)),0);
 });
 
@@ -33,22 +33,24 @@ test('auto loops repeat short beat-aligned excerpts and crop tails to exact shar
 });
 
 test('unknown, disputed and unsynced BPM never silently assert an automatic beat loop',()=>{
-  for(const s of [{...sample,bpm:null},{...sample,bpmSource:'filename-hint'},{...sample,conflicts:{bpm:{resolved:false}}},{...sample,bpm:60}]){
+  for(const s of [{...sample,bpm:null},{...sample,bpmSource:'filename-hint'},{...sample,conflicts:{bpm:{resolved:false}}},{...sample,bpm:100}]){
     const p=plan(2,track(),s,{...settings,sync:false});assert.equal(p.events.length,1);assert.equal(p.warnings.length,1);
     assert.equal(plan(2,track(0,'bar'),s,settings).events.length,4,'explicit repetition remains available');
   }
   assert.equal(plan(2,track(),{...sample,conflicts:{bpm:{resolved:true}}}).events.length,4);
+  // An octave from the session tempo shares its beat grid, synced or not.
+  for(const bpm of [60,240])assert.equal(plan(2,track(),{...sample,bpm},{...settings,sync:false}).events.length,4);
   assert.equal(plan(.3,track(),{...sample,bpm:null}).padded,true);
   assert.equal(plan(2,track(0,'once')).events.length,1);
   assert.equal(plan(20).events[0].copy,8*rate);
 });
 
 test('offsets stay in original seconds through tempo stretching and are identical in both stereo channels',()=>{
-  const stretched={...settings,tempo:180},input=fakeContext.createBuffer(2,rate*2,rate);
-  const start=Math.round(.25/1.5*rate);input.getChannelData(0)[start+32]=.8;input.getChannelData(1)[start+32]=-.4;
+  const stretched={...settings,tempo:150},input=fakeContext.createBuffer(2,rate*2,rate);
+  const start=Math.round(.25/1.25*rate);input.getChannelData(0)[start+32]=.8;input.getChannelData(1)[start+32]=-.4;
   input.getChannelData(0)[32]=1;
   const {buffer,plan:p}=makeCycle(fakeContext,input,sample,track(.25,'bar'),stretched);
-  assert.equal(p.events[0].sourceStart,start);assert.equal(buffer.length,sessionFrames(180,rate));
+  assert.equal(p.events[0].sourceStart,start);assert.equal(buffer.length,sessionFrames(150,rate));
   for(const event of p.events){assert.ok(Math.abs(buffer.getChannelData(0)[event.start+32]-.8)<1e-6);assert.ok(Math.abs(buffer.getChannelData(1)[event.start+32]+.4)<1e-6);}
   assert.ok(!buffer.getChannelData(0).some(value=>value===1),'audio before selected downbeat must be omitted');
   const unknown=plan(1,track(.25),{...sample,bpm:null},stretched);assert.equal(unknown.events[0].sourceStart,Math.round(.25*rate));
