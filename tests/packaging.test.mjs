@@ -11,7 +11,7 @@ const pkg = JSON.parse(await read('package.json'));
 const upstream = JSON.parse(await read('UPSTREAM-SOURCES.json'));
 
 test('package.json carries the app identity and GitHub update feed', () => {
-  assert.equal(pkg.version, '0.4.0-alpha.1');
+  assert.equal(pkg.version, '0.4.0-alpha.2');
   assert.equal(pkg.build.appId, 'com.dqlabs.sift');
   assert.equal(pkg.appId, pkg.build.appId);
   assert.equal(pkg.productName, 'Sift');
